@@ -1,9 +1,9 @@
-mod nrz {
+pub mod nrz {
     #[derive(Debug, PartialEq)]
     pub enum Value {
         StartOfFrame,
         Bit(bool),
-        EndOfFrame,
+        EndOfFrame(u8),
         StuffBit,
         Complete
     }
@@ -61,7 +61,7 @@ mod nrz {
             }
         }
 
-        fn current(&self) -> Value {
+        pub fn current(&self) -> Value {
             match self.m.sm {
                 StateMachine::Start => Value::StartOfFrame,
                 StateMachine::Payload => {
@@ -72,11 +72,7 @@ mod nrz {
                     }
                 },
                 StateMachine::EndOfFrame => {
-                    if self.m.contigous_zeros == 0 {
-                        Value::EndOfFrame
-                    } else {
-                        Value::Bit(false)
-                    }
+                    Value::EndOfFrame(self.m.contigous_zeros)
                 },
                 StateMachine::Complete => {
                     Value::Complete
@@ -84,7 +80,7 @@ mod nrz {
             }
         }
 
-        fn advance(&mut self) {
+        pub fn advance(&mut self) {
             let sm = self.m.sm.clone();
             self.m.sm = match sm {
                 StateMachine::Start => {
@@ -177,17 +173,17 @@ mod nrz {
                 Value::Bit(false),
                 Value::Bit(false),
                 Value::Bit(false),
-                Value::EndOfFrame,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false)
+                Value::EndOfFrame(0),
+                Value::EndOfFrame(1),
+                Value::EndOfFrame(2),
+                Value::EndOfFrame(3),
+                Value::EndOfFrame(4),
+                Value::EndOfFrame(5),
+                Value::EndOfFrame(6),
+                Value::EndOfFrame(7),
+                Value::EndOfFrame(8),
+                Value::EndOfFrame(9),
+                Value::EndOfFrame(10)
             ]);
         }
         #[test]
@@ -204,12 +200,12 @@ mod nrz {
                 Value::Bit(false),
                 Value::Bit(false),
                 Value::Bit(false),
-                Value::EndOfFrame,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false)
+                Value::EndOfFrame(0),
+                Value::EndOfFrame(1),
+                Value::EndOfFrame(2),
+                Value::EndOfFrame(3),
+                Value::EndOfFrame(4),
+                Value::EndOfFrame(5)
             ]);
         }
 
@@ -227,13 +223,13 @@ mod nrz {
                 Value::Bit(false),
                 Value::Bit(false),
                 Value::Bit(false),
-                Value::EndOfFrame,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false)
+                Value::EndOfFrame(0),
+                Value::EndOfFrame(1),
+                Value::EndOfFrame(2),
+                Value::EndOfFrame(3),
+                Value::EndOfFrame(4),
+                Value::EndOfFrame(5),
+                Value::EndOfFrame(6)
             ]);
         }
 
@@ -250,12 +246,12 @@ mod nrz {
                 Value::Bit(false),
                 Value::Bit(false),
                 Value::Bit(false),
-                Value::EndOfFrame,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false)
+                Value::EndOfFrame(0),
+                Value::EndOfFrame(1),
+                Value::EndOfFrame(2),
+                Value::EndOfFrame(3),
+                Value::EndOfFrame(4),
+                Value::EndOfFrame(5)
             ]);
         }
 
@@ -273,12 +269,12 @@ mod nrz {
                 Value::Bit(true),
                 Value::Bit(false),
                 Value::Bit(false),
-                Value::EndOfFrame,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false)
+                Value::EndOfFrame(0),
+                Value::EndOfFrame(1),
+                Value::EndOfFrame(2),
+                Value::EndOfFrame(3),
+                Value::EndOfFrame(4),
+                Value::EndOfFrame(5)
             ]);
         }
 
@@ -304,12 +300,12 @@ mod nrz {
                 Value::Bit(false),
                 Value::Bit(true),
                 Value::Bit(false),
-                Value::EndOfFrame,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false)
+                Value::EndOfFrame(0),
+                Value::EndOfFrame(1),
+                Value::EndOfFrame(2),
+                Value::EndOfFrame(3),
+                Value::EndOfFrame(4),
+                Value::EndOfFrame(5)
             ]);
         }
     }
