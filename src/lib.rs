@@ -1,95 +1,52 @@
-pub mod waves {
-    /// Time offset of a signal in terms of seconds
-    #[derive(Clone, Copy)]
-    pub struct Time(f32);
+pub mod units;
+pub mod waves;
 
-    impl Time {
-        pub fn new(value: f32) -> Self { Self(value) }
-        pub fn zero() -> Self { Self (0f32) }
-        pub fn value(self) -> f32 { self.0 }
+pub mod signals {
+    use crate::units::{Time, Amplitude, Frequency};
+    pub enum Error {
+        Undersampled
     }
 
-    impl std::ops::Add for Time {
-        type Output = Time;
-
-        fn add(self, rhs: Self) -> Self::Output {
-            Self(self.0 + rhs.0)
-        }
+    pub trait Signal : Sized + Send {
+        fn advance_with(&mut self, dt: Time) -> Result<Amplitude, Error>;
     }
 
-    impl<T> std::ops::Mul<T> for Time
-        where T: std::ops::Mul<f32, Output=f32>
-    {
-        type Output = Time;
+    pub struct Proportion(f32);
 
-        fn mul(self, rhs: T) -> Self::Output {
-            Time(rhs * self.0)
-        }
+    /// Amplitude modulated signals
+    pub mod am {
+        use crate::units::{Time, Amplitude, Frequency};
 
-    }
-    /// Frequency of a signal in terms of 1/s a.k.a Hz
-    #[derive(Clone, Copy)]
-    pub struct Frequency(f32);
+        use super::Proportion;
 
-    impl Frequency {
-        pub fn new(value: f32) -> Self { Self(value) }
-        pub fn value(self) -> f32 { self.0 }
-    }
-    /// Maximum amplitude of a signal
-    #[derive(Clone, Copy)]
-    pub struct Amplitude(f32);
-
-    impl Amplitude {
-        pub fn new(value: f32) -> Self { Self(value) }
-        pub fn value(self) -> f32 { self.0 }
-    }
-
-    pub trait Wave : Sized + Send {
-        fn shift_mut(&mut self, offset: Time);
-        fn value_at(&self, t: Time) -> Amplitude;
-
-
-        fn shift(mut self, offset: Time) -> Self {
-            self.shift_mut(offset);
-            self
-        }
-    }
-
-    pub struct Sine {
-        freq: Frequency,
-        phase_offset: Time,
-        amplitude: Amplitude
-    }
-
-    impl Sine {
-        pub fn new(freq: Frequency, phase_offset: Time, amplitude: Amplitude) -> Self {
-            Self {
-                freq: freq,
-                phase_offset: phase_offset,
-                amplitude: amplitude
-            }
-        }
-    }
-
-    impl Wave for Sine {
-        fn shift_mut(&mut self, offset: Time) {
-            let new_phase_offset_base = self.phase_offset + offset;
-            let cycle_time = self.freq.value().recip();
-            let whole_phases = (new_phase_offset_base.value() / cycle_time).floor();
-            self.phase_offset = Time::new(new_phase_offset_base.value() - (whole_phases * cycle_time));
+        pub struct SqareWaveDataNRZConsts {
+            baudrate: Frequency,
+            transition_width: Proportion,
+            stuff_bit_width: u8,
+            payload: Vec<u8>, // Bytes
+            baud_length: f32
         }
 
-        fn value_at(&self, t: Time) -> Amplitude {
-            let offset_t = self.phase_offset.value() + t.value();
-            let apply_pi = offset_t * 2.0f32 * std::f32::consts::PI;
-            let apply_frequency = apply_pi * self.freq.value();
-            Amplitude::new(apply_frequency.sin() * self.amplitude.value())
+        struct SqareWaveDataNRZState {
+            payload_offset: usize,
+            current_bit_offset: u8,
+            contigous_zeros: u8,
+            current_transition_progress: f32
+        }
+
+        impl SqareWaveDataNRZState {
+
+        }
+
+        pub struct SqareWaveDataNRZ {
+            c: SqareWaveDataNRZConsts,
+            m: SqareWaveDataNRZState
         }
     }
 }
 
 pub mod sampling {
-    use crate::waves;
+    use crate::units::{Amplitude, Time, Frequency};
 
     /// Number of samplings per second
     pub struct SamplingRate(usize);
@@ -107,23 +64,23 @@ pub mod sampling {
     }
 
     impl SamplingRate {
-        fn sample(&self, amount: Samples) -> waves::Time {
+        fn sample(&self, amount: Samples) -> Time {
             let rate = self.0 as f32;
             let amount = amount.0 as f32;
-            waves::Time::new(amount / rate)
+            Time::new(amount / rate)
         }
 
-        fn increment(&self) -> waves::Time {
-            waves::Time::new(1.0f32 / (self.0 as f32))
+        fn increment(&self) -> Time {
+            Time::new(1.0f32 / (self.0 as f32))
         }
     }
     
     pub trait Sampleable: Send {
-        fn sample_into_f32(&self, out: &mut [f32], rate: SamplingRate) -> waves::Time;
+        fn sample_into_f32(&self, out: &mut [f32], rate: SamplingRate) -> Time;
     }
 
     impl<T: crate::waves::Wave> Sampleable for T {
-        fn sample_into_f32(&self, out: &mut [f32], rate: SamplingRate) -> waves::Time
+        fn sample_into_f32(&self, out: &mut [f32], rate: SamplingRate) -> Time
         {
             let length = rate.sample(Samples::from(out.len()));
             let increment = rate.increment();
