@@ -41,3 +41,11 @@ impl Wave for Sine {
         Amplitude::new(apply_frequency.sin() * self.amplitude.value())
     }
 }
+
+impl<T: Wave> crate::signals::Signal for T {
+    fn advance_with(&mut self, dt: Time) -> Result<Amplitude, crate::signals::Error> {
+        let result = self.value_at(Time::zero());
+        self.shift_mut(dt);
+        Ok(result)
+    }
+}
