@@ -1,6 +1,7 @@
-use crate::units::Time;
+use crate::units::{Amplitude, Time};
 
 /// Number of samplings per second
+#[derive(Clone, Copy)]
 pub struct SamplingRate(usize);
 impl SamplingRate {
     pub fn new(value: usize) -> Self {
@@ -31,20 +32,75 @@ impl SamplingRate {
     }
 }
 
+struct WaveSampler<T>(T);
+struct SignalSampler<T>(T);
+
 pub trait Sampleable: Send {
-    fn sample_into_f32(&self, out: &mut [f32], rate: SamplingRate) -> Time;
+    fn sample_into_f32(&mut self, out: &mut [f32], rate: SamplingRate) -> Time;
 }
 
-impl<T: crate::waves::Wave> Sampleable for T {
-    fn sample_into_f32(&self, out: &mut [f32], rate: SamplingRate) -> Time {
+impl<T: crate::waves::Wave> Sampleable for WaveSampler<T> {
+    fn sample_into_f32(&mut self, out: &mut [f32], rate: SamplingRate) -> Time {
         let length = rate.sample(Samples::from(out.len()));
         let increment = rate.increment();
 
         for (sample_idx, sample_value) in out.iter_mut().enumerate() {
-            let amplitude = self.value_at(increment * (sample_idx as f32));
+            let amplitude = self.0.value_at(increment * (sample_idx as f32));
             *sample_value = amplitude.value();
         }
 
         length
+    }
+}
+
+impl<T: crate::signals::Signal> Sampleable for SignalSampler<T> {
+    fn sample_into_f32(&mut self, out: &mut [f32], rate: SamplingRate) -> Time {
+        let length = rate.sample(Samples::from(out.len()));
+        let increment = rate.increment();
+
+        for sample_value in out.iter_mut() {
+            let amplitude = match self.0.advance_with(increment) {
+                Ok(amplitude) => amplitude,
+                Err(crate::signals::Error::Finished) => Amplitude::zero(),
+                _ => panic!("Unhandleable error during sampling"),
+            };
+            *sample_value = amplitude.value();
+        }
+
+        length
+    }
+}
+
+struct CompositeSampler<F, S1, S2>
+where
+    F: Fn((&f32, &f32), &mut f32) -> () + Send,
+    S1: Sampleable,
+    S2: Sampleable,
+{
+    compositor: F,
+    s: (S1, S2),
+    buffer: (Vec<f32>, Vec<f32>),
+}
+
+impl<F, S1, S2> Sampleable for CompositeSampler<F, S1, S2>
+where
+    F: Fn((&f32, &f32), &mut f32) -> () + Send,
+    S1: Sampleable,
+    S2: Sampleable,
+{
+    fn sample_into_f32(&mut self, out: &mut [f32], rate: SamplingRate) -> Time {
+        if out.len() != self.buffer.0.len() {
+            self.buffer.0.resize(out.len(), 0.0);
+            self.buffer.1.resize(out.len(), 0.0);
+        }
+
+        self.s.0.sample_into_f32(self.buffer.0.as_mut_slice(), rate);
+        self.s.1.sample_into_f32(self.buffer.1.as_mut_slice(), rate);
+
+        out.iter_mut()
+            .zip(self.buffer.0.iter().zip(self.buffer.1.iter()))
+            .for_each(|(out, s)| (self.compositor)(s, out));
+
+        todo!()
     }
 }

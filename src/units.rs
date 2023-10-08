@@ -94,6 +94,9 @@ impl Amplitude {
     pub fn value(self) -> f32 {
         self.0
     }
+    pub fn zero() -> Self {
+        Self(0.0)
+    }
 }
 
 impl std::ops::Add for Amplitude {
