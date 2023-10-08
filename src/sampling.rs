@@ -1,4 +1,4 @@
-use crate::units::{Amplitude, Time, Frequency};
+use crate::units::Time;
 
 /// Number of samplings per second
 pub struct SamplingRate(usize);
