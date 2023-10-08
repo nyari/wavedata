@@ -1,31 +1,36 @@
-use crate::units::{Time, Amplitude};
+use crate::units::{Amplitude, Time};
 
 /// Amplitude modulated signals
 pub mod am;
 
-
 #[derive(Debug)]
 pub enum Error {
     Undersampled,
-    Finished
+    Finished,
 }
 
-pub trait Signal : Sized + Send {
+pub trait Signal: Sized + Send {
     fn advance_with(&mut self, dt: Time) -> Result<Amplitude, Error>;
 }
 
 #[derive(Clone, Copy)]
 enum BinaryLevel {
     Low,
-    High
+    High,
 }
 
 impl BinaryLevel {
     fn neg(self) -> Self {
         match self {
             Self::High => Self::Low,
-            Self::Low => Self::High
+            Self::Low => Self::High,
         }
     }
 }
 
+struct CompositeSignal<F>
+where
+    F: Fn((Amplitude, Amplitude), Time) -> Amplitude,
+{
+    compositor: F,
+}

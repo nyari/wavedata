@@ -1,6 +1,6 @@
-use crate::units::{Time, Amplitude, Frequency};
+use crate::units::{Amplitude, Frequency, Time};
 
-pub trait Wave : Sized + Send {
+pub trait Wave: Sized + Send {
     fn shift_mut(&mut self, offset: Time);
     fn value_at(&self, t: Time) -> Amplitude;
 
@@ -13,7 +13,7 @@ pub trait Wave : Sized + Send {
 pub struct Sine {
     freq: Frequency,
     phase_offset: Time,
-    amplitude: Amplitude
+    amplitude: Amplitude,
 }
 
 impl Sine {
@@ -21,7 +21,7 @@ impl Sine {
         Self {
             freq: freq,
             phase_offset: phase_offset,
-            amplitude: amplitude
+            amplitude: amplitude,
         }
     }
 }

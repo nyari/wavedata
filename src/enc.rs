@@ -5,7 +5,7 @@ pub mod nrz {
         Bit(bool),
         EndOfFrame(u8),
         StuffBit,
-        Complete
+        Complete,
     }
 
     #[derive(Clone, Copy)]
@@ -13,7 +13,7 @@ pub mod nrz {
         Start,
         Payload,
         EndOfFrame,
-        Complete
+        Complete,
     }
 
     pub struct Parameters {
@@ -34,7 +34,7 @@ pub mod nrz {
         payload_offset: usize,
         current_bit_offset: u8,
         contigous_zeros: u8,
-        sm: StateMachine
+        sm: StateMachine,
     }
 
     impl State {
@@ -43,21 +43,21 @@ pub mod nrz {
                 payload_offset: 0,
                 current_bit_offset: 0,
                 contigous_zeros: 0,
-                sm: StateMachine::Start
+                sm: StateMachine::Start,
             }
         }
     }
 
     pub struct NRZ {
         c: Parameters,
-        m: State
+        m: State,
     }
 
     impl NRZ {
         pub fn new(c: Parameters) -> Self {
             Self {
                 c: c,
-                m: State::init()
+                m: State::init(),
             }
         }
 
@@ -71,21 +71,15 @@ pub mod nrz {
                         Value::StuffBit
                     }
                 },
-                StateMachine::EndOfFrame => {
-                    Value::EndOfFrame(self.m.contigous_zeros)
-                },
-                StateMachine::Complete => {
-                    Value::Complete
-                }
+                StateMachine::EndOfFrame => Value::EndOfFrame(self.m.contigous_zeros),
+                StateMachine::Complete => Value::Complete,
             }
         }
 
         pub fn advance(&mut self) {
             let sm = self.m.sm.clone();
             self.m.sm = match sm {
-                StateMachine::Start => {
-                    StateMachine::Payload
-                },
+                StateMachine::Start => StateMachine::Payload,
                 StateMachine::Payload => {
                     let last_bit = self.current_bit();
                     if !self.stuffing() {
@@ -105,7 +99,7 @@ pub mod nrz {
                         self.m.contigous_zeros = 0;
                         StateMachine::EndOfFrame
                     }
-                }
+                },
                 StateMachine::EndOfFrame => {
                     self.m.contigous_zeros += 1;
                     if self.m.contigous_zeros > self.c.stuff_bit_after + 1 {
@@ -113,8 +107,8 @@ pub mod nrz {
                     } else {
                         StateMachine::EndOfFrame
                     }
-                }
-                StateMachine::Complete => StateMachine::Complete
+                },
+                StateMachine::Complete => StateMachine::Complete,
             }
         }
 
@@ -145,13 +139,12 @@ pub mod nrz {
     impl Iterator for NRZ {
         type Item = Value;
 
-        fn next(&mut self) -> Option<Self::Item>
-        {
+        fn next(&mut self) -> Option<Self::Item> {
             let result = self.current();
             self.advance();
             match result {
                 Value::Complete => None,
-                value => Some(value)
+                value => Some(value),
             }
         }
     }
@@ -159,155 +152,190 @@ pub mod nrz {
     #[cfg(test)]
     mod tests {
         use super::*;
-    
+
         #[test]
         fn null_byte_without_bit_stuffing() {
-            let nrz = NRZ::new(Parameters { payload: vec![0b_0000_0000], stuff_bit_after: 9 });
-            assert_eq!(nrz.collect::<Vec<Value>>(), vec![
-                Value::StartOfFrame,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::EndOfFrame(0),
-                Value::EndOfFrame(1),
-                Value::EndOfFrame(2),
-                Value::EndOfFrame(3),
-                Value::EndOfFrame(4),
-                Value::EndOfFrame(5),
-                Value::EndOfFrame(6),
-                Value::EndOfFrame(7),
-                Value::EndOfFrame(8),
-                Value::EndOfFrame(9),
-                Value::EndOfFrame(10)
-            ]);
+            let nrz = NRZ::new(Parameters {
+                payload: vec![0b_0000_0000],
+                stuff_bit_after: 9,
+            });
+            assert_eq!(
+                nrz.collect::<Vec<Value>>(),
+                vec![
+                    Value::StartOfFrame,
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::EndOfFrame(0),
+                    Value::EndOfFrame(1),
+                    Value::EndOfFrame(2),
+                    Value::EndOfFrame(3),
+                    Value::EndOfFrame(4),
+                    Value::EndOfFrame(5),
+                    Value::EndOfFrame(6),
+                    Value::EndOfFrame(7),
+                    Value::EndOfFrame(8),
+                    Value::EndOfFrame(9),
+                    Value::EndOfFrame(10)
+                ]
+            );
         }
         #[test]
         fn null_byte_with_symmetric_bit_stuffing() {
-            let nrz = NRZ::new(Parameters { payload: vec![0b_0000_0000], stuff_bit_after: 4 });
-            assert_eq!(nrz.collect::<Vec<Value>>(), vec![
-                Value::StartOfFrame,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::StuffBit,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::EndOfFrame(0),
-                Value::EndOfFrame(1),
-                Value::EndOfFrame(2),
-                Value::EndOfFrame(3),
-                Value::EndOfFrame(4),
-                Value::EndOfFrame(5)
-            ]);
+            let nrz = NRZ::new(Parameters {
+                payload: vec![0b_0000_0000],
+                stuff_bit_after: 4,
+            });
+            assert_eq!(
+                nrz.collect::<Vec<Value>>(),
+                vec![
+                    Value::StartOfFrame,
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::StuffBit,
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::EndOfFrame(0),
+                    Value::EndOfFrame(1),
+                    Value::EndOfFrame(2),
+                    Value::EndOfFrame(3),
+                    Value::EndOfFrame(4),
+                    Value::EndOfFrame(5)
+                ]
+            );
         }
 
         #[test]
         fn null_byte_with_assymetric_bit_stuffing() {
-            let nrz = NRZ::new(Parameters { payload: vec![0b_0000_0000], stuff_bit_after: 5 });
-            assert_eq!(nrz.collect::<Vec<Value>>(), vec![
-                Value::StartOfFrame,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::StuffBit,
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::EndOfFrame(0),
-                Value::EndOfFrame(1),
-                Value::EndOfFrame(2),
-                Value::EndOfFrame(3),
-                Value::EndOfFrame(4),
-                Value::EndOfFrame(5),
-                Value::EndOfFrame(6)
-            ]);
+            let nrz = NRZ::new(Parameters {
+                payload: vec![0b_0000_0000],
+                stuff_bit_after: 5,
+            });
+            assert_eq!(
+                nrz.collect::<Vec<Value>>(),
+                vec![
+                    Value::StartOfFrame,
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::StuffBit,
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::EndOfFrame(0),
+                    Value::EndOfFrame(1),
+                    Value::EndOfFrame(2),
+                    Value::EndOfFrame(3),
+                    Value::EndOfFrame(4),
+                    Value::EndOfFrame(5),
+                    Value::EndOfFrame(6)
+                ]
+            );
         }
 
         #[test]
         fn byte_without_bit_stuffing_needed() {
-            let nrz = NRZ::new(Parameters { payload: vec![0b_1001_1000], stuff_bit_after: 4 });
-            assert_eq!(nrz.collect::<Vec<Value>>(), vec![
-                Value::StartOfFrame,
-                Value::Bit(true),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(true),
-                Value::Bit(true),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::EndOfFrame(0),
-                Value::EndOfFrame(1),
-                Value::EndOfFrame(2),
-                Value::EndOfFrame(3),
-                Value::EndOfFrame(4),
-                Value::EndOfFrame(5)
-            ]);
+            let nrz = NRZ::new(Parameters {
+                payload: vec![0b_1001_1000],
+                stuff_bit_after: 4,
+            });
+            assert_eq!(
+                nrz.collect::<Vec<Value>>(),
+                vec![
+                    Value::StartOfFrame,
+                    Value::Bit(true),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(true),
+                    Value::Bit(true),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::EndOfFrame(0),
+                    Value::EndOfFrame(1),
+                    Value::EndOfFrame(2),
+                    Value::EndOfFrame(3),
+                    Value::EndOfFrame(4),
+                    Value::EndOfFrame(5)
+                ]
+            );
         }
 
         #[test]
         fn byte_with_bit_stuffing_needed() {
-            let nrz = NRZ::new(Parameters { payload: vec![0b_1000_0100], stuff_bit_after: 4 });
-            assert_eq!(nrz.collect::<Vec<Value>>(), vec![
-                Value::StartOfFrame,
-                Value::Bit(true),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::StuffBit,
-                Value::Bit(true),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::EndOfFrame(0),
-                Value::EndOfFrame(1),
-                Value::EndOfFrame(2),
-                Value::EndOfFrame(3),
-                Value::EndOfFrame(4),
-                Value::EndOfFrame(5)
-            ]);
+            let nrz = NRZ::new(Parameters {
+                payload: vec![0b_1000_0100],
+                stuff_bit_after: 4,
+            });
+            assert_eq!(
+                nrz.collect::<Vec<Value>>(),
+                vec![
+                    Value::StartOfFrame,
+                    Value::Bit(true),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::StuffBit,
+                    Value::Bit(true),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::EndOfFrame(0),
+                    Value::EndOfFrame(1),
+                    Value::EndOfFrame(2),
+                    Value::EndOfFrame(3),
+                    Value::EndOfFrame(4),
+                    Value::EndOfFrame(5)
+                ]
+            );
         }
 
         #[test]
         fn multibyte_test_1() {
-            let nrz = NRZ::new(Parameters { payload: vec![0b_1001_1000, 0b_0010_0010], stuff_bit_after: 4 });
-            assert_eq!(nrz.collect::<Vec<Value>>(), vec![
-                Value::StartOfFrame,
-                Value::Bit(true),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(true),
-                Value::Bit(true),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::StuffBit,
-                Value::Bit(false),
-                Value::Bit(true),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(false),
-                Value::Bit(true),
-                Value::Bit(false),
-                Value::EndOfFrame(0),
-                Value::EndOfFrame(1),
-                Value::EndOfFrame(2),
-                Value::EndOfFrame(3),
-                Value::EndOfFrame(4),
-                Value::EndOfFrame(5)
-            ]);
+            let nrz = NRZ::new(Parameters {
+                payload: vec![0b_1001_1000, 0b_0010_0010],
+                stuff_bit_after: 4,
+            });
+            assert_eq!(
+                nrz.collect::<Vec<Value>>(),
+                vec![
+                    Value::StartOfFrame,
+                    Value::Bit(true),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(true),
+                    Value::Bit(true),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::StuffBit,
+                    Value::Bit(false),
+                    Value::Bit(true),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(false),
+                    Value::Bit(true),
+                    Value::Bit(false),
+                    Value::EndOfFrame(0),
+                    Value::EndOfFrame(1),
+                    Value::EndOfFrame(2),
+                    Value::EndOfFrame(3),
+                    Value::EndOfFrame(4),
+                    Value::EndOfFrame(5)
+                ]
+            );
         }
     }
-
 }
