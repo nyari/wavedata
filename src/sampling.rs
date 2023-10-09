@@ -1,5 +1,8 @@
 use crate::units::{Amplitude, Time};
 
+pub struct Samples<'a>(pub &'a [f32]);
+pub struct SamplesMut<'a>(pub &'a mut [f32]);
+
 /// Number of samplings per second
 #[derive(Clone, Copy)]
 pub struct SamplingRate(usize);
@@ -12,16 +15,16 @@ impl SamplingRate {
     }
 }
 /// Number of samples taken
-pub struct Samples(usize);
+pub struct SampleCount(usize);
 
-impl From<usize> for Samples {
+impl From<usize> for SampleCount {
     fn from(value: usize) -> Self {
         Self(value)
     }
 }
 
 impl SamplingRate {
-    fn sample(&self, amount: Samples) -> Time {
+    fn sample(&self, amount: SampleCount) -> Time {
         let rate = self.0 as f32;
         let amount = amount.0 as f32;
         Time::new(amount / rate)
@@ -33,7 +36,7 @@ impl SamplingRate {
 }
 
 pub trait Sampleable: Send {
-    fn sample_into_f32(&mut self, out: &mut [f32], rate: SamplingRate);
+    fn sample_into_f32(&mut self, out: SamplesMut, rate: SamplingRate);
 }
 
 pub struct WaveSampler<T>(T);
@@ -45,11 +48,11 @@ impl<T: Sized> WaveSampler<T> {
 }
 
 impl<T: crate::waves::Wave> Sampleable for WaveSampler<T> {
-    fn sample_into_f32(&mut self, out: &mut [f32], rate: SamplingRate) {
-        let length = rate.sample(Samples::from(out.len()));
+    fn sample_into_f32(&mut self, out: SamplesMut, rate: SamplingRate) {
+        let length = rate.sample(SampleCount::from(out.0.len()));
         let increment = rate.increment();
 
-        for (sample_idx, sample_value) in out.iter_mut().enumerate() {
+        for (sample_idx, sample_value) in out.0.iter_mut().enumerate() {
             let amplitude = self.0.value_at(increment * (sample_idx as f32));
             *sample_value = amplitude.value();
         }
@@ -67,10 +70,10 @@ impl<T: Sized> SignalSampler<T> {
 }
 
 impl<T: crate::signals::Signal> Sampleable for SignalSampler<T> {
-    fn sample_into_f32(&mut self, out: &mut [f32], rate: SamplingRate) {
+    fn sample_into_f32(&mut self, out: SamplesMut, rate: SamplingRate) {
         let increment = rate.increment();
 
-        for sample_value in out.iter_mut() {
+        for sample_value in out.0.iter_mut() {
             let amplitude = match self.0.advance_with(increment) {
                 Ok(amplitude) => amplitude,
                 Err(crate::signals::Error::Finished) => Amplitude::zero(),
@@ -113,16 +116,21 @@ where
     S1: Sampleable,
     S2: Sampleable,
 {
-    fn sample_into_f32(&mut self, out: &mut [f32], rate: SamplingRate) {
-        if out.len() != self.buffer.0.len() {
-            self.buffer.0.resize(out.len(), 0.0);
-            self.buffer.1.resize(out.len(), 0.0);
+    fn sample_into_f32(&mut self, out: SamplesMut, rate: SamplingRate) {
+        if out.0.len() != self.buffer.0.len() {
+            self.buffer.0.resize(out.0.len(), 0.0);
+            self.buffer.1.resize(out.0.len(), 0.0);
         }
 
-        self.s.0.sample_into_f32(self.buffer.0.as_mut_slice(), rate);
-        self.s.1.sample_into_f32(self.buffer.1.as_mut_slice(), rate);
+        self.s
+            .0
+            .sample_into_f32(SamplesMut(self.buffer.0.as_mut_slice()), rate);
+        self.s
+            .1
+            .sample_into_f32(SamplesMut(self.buffer.1.as_mut_slice()), rate);
 
-        out.iter_mut()
+        out.0
+            .iter_mut()
             .zip(self.buffer.0.iter().zip(self.buffer.1.iter()))
             .for_each(|(out, s)| (self.compositor)(s, out));
     }
