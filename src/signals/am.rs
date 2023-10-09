@@ -1,7 +1,9 @@
-use crate::enc;
+use crate::encodings::{self};
 use crate::units::{Amplitude, Frequency, Proportion, Time};
 
 use super::{BinaryLevel, Signal};
+
+type NRZEncoder = encodings::enc::nrz::NRZ;
 
 pub struct NRZConsts {
     transition_width: Time,
@@ -24,15 +26,15 @@ impl NRZConsts {
 }
 
 struct NRZState {
-    nrz: enc::nrz::NRZ,
+    nrz: NRZEncoder,
     current_transition_progress: Time,
     current_level: BinaryLevel,
 }
 
 impl NRZState {
-    pub fn init(nrz_params: enc::nrz::Parameters) -> Self {
+    pub fn init(nrz_params: encodings::enc::nrz::Parameters) -> Self {
         Self {
-            nrz: enc::nrz::NRZ::new(nrz_params),
+            nrz: NRZEncoder::new(nrz_params),
             current_transition_progress: Time::zero(),
             current_level: BinaryLevel::Low,
         }
@@ -45,7 +47,7 @@ pub struct NRZ {
 }
 
 impl NRZ {
-    pub fn new(c: NRZConsts, nrz_params: enc::nrz::Parameters) -> Self {
+    pub fn new(c: NRZConsts, nrz_params: encodings::enc::nrz::Parameters) -> Self {
         Self {
             c: c,
             m: NRZState::init(nrz_params),
@@ -92,7 +94,7 @@ impl NRZ {
             self.m.nrz.advance();
         }
 
-        if let enc::nrz::Value::Complete = self.m.nrz.current() {
+        if let encodings::enc::nrz::Value::Complete = self.m.nrz.current() {
             Err(super::Error::Finished)
         } else {
             Ok(())
@@ -101,15 +103,17 @@ impl NRZ {
 
     fn transition(&self) -> bool {
         match self.m.nrz.current() {
-            enc::nrz::Value::StartOfFrame
-            | enc::nrz::Value::StuffBit
-            | enc::nrz::Value::Bit(true) => true,
-            enc::nrz::Value::EndOfFrame(eofidx) => match (self.m.current_level, eofidx) {
-                (BinaryLevel::Low, 0) => true,
-                (BinaryLevel::Low, _) => false,
-                (BinaryLevel::High, 0) => true,
-                (BinaryLevel::High, 1) => true,
-                (BinaryLevel::High, _) => false,
+            encodings::enc::nrz::Value::StartOfFrame
+            | encodings::enc::nrz::Value::StuffBit
+            | encodings::enc::nrz::Value::Bit(true) => true,
+            encodings::enc::nrz::Value::EndOfFrame(eofidx) => {
+                match (self.m.current_level, eofidx) {
+                    (BinaryLevel::Low, 0) => true,
+                    (BinaryLevel::Low, _) => false,
+                    (BinaryLevel::High, 0) => true,
+                    (BinaryLevel::High, 1) => true,
+                    (BinaryLevel::High, _) => false,
+                }
             },
             _ => false,
         }
@@ -136,7 +140,7 @@ mod tests {
                 Proportion::new(1.0),
                 (Amplitude::new(1.0), Amplitude::new(0.0)),
             ),
-            enc::nrz::Parameters::new(vec![0b_0100_0010_u8], 4),
+            encodings::enc::nrz::Parameters::new(vec![0b_0100_0010_u8], 4),
         );
 
         assert_eq!(
