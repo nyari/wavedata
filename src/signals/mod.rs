@@ -1,7 +1,7 @@
 use crate::units::{Amplitude, Time};
 
 /// Amplitude modulated signals
-pub mod am;
+pub mod enc;
 
 #[derive(Debug)]
 pub enum Error {

@@ -1,7 +1,7 @@
 use crate::encodings::{self};
 use crate::units::{Amplitude, Frequency, Proportion, Time};
 
-use super::{BinaryLevel, Signal};
+use crate::signals::{BinaryLevel, Signal};
 
 type NRZEncoder = encodings::enc::nrz::NRZ;
 
@@ -80,9 +80,9 @@ impl NRZ {
         from + (delta * progress)
     }
 
-    fn advance(&mut self, dt: Time) -> Result<(), super::Error> {
+    fn advance(&mut self, dt: Time) -> Result<(), crate::signals::Error> {
         if dt > self.c.transition_width {
-            return Err(super::Error::Undersampled);
+            return Err(crate::signals::Error::Undersampled);
         }
 
         self.m.current_transition_progress += dt;
@@ -95,7 +95,7 @@ impl NRZ {
         }
 
         if let encodings::enc::nrz::Value::Complete = self.m.nrz.current() {
-            Err(super::Error::Finished)
+            Err(crate::signals::Error::Finished)
         } else {
             Ok(())
         }
@@ -121,7 +121,7 @@ impl NRZ {
 }
 
 impl Signal for NRZ {
-    fn advance_with(&mut self, dt: Time) -> Result<Amplitude, super::Error> {
+    fn advance_with(&mut self, dt: Time) -> Result<Amplitude, crate::signals::Error> {
         let result = self.current_value();
         self.advance(dt)?;
         Ok(result)
