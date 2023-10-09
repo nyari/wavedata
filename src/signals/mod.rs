@@ -1,5 +1,6 @@
 use crate::units::{Amplitude, Time};
 
+pub mod dec;
 /// Amplitude modulated signals
 pub mod enc;
 

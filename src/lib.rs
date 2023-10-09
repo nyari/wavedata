@@ -1,3 +1,5 @@
+pub use rustfft as rfft;
+
 pub mod encodings;
 pub mod sampling;
 pub mod signals;
