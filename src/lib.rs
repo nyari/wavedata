@@ -4,4 +4,5 @@ pub mod encodings;
 pub mod sampling;
 pub mod signals;
 pub mod units;
+mod utils;
 pub mod waves;
