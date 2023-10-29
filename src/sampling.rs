@@ -1,6 +1,12 @@
-use crate::units::{Amplitude, Time};
+use crate::units::{Amplitude, Frequency, Time};
 
 pub struct Samples<'a>(pub &'a [f32]);
+
+impl<'a> Samples<'a> {
+    pub fn count(&self) -> SampleCount {
+        SampleCount(self.0.len())
+    }
+}
 pub struct SamplesMut<'a>(pub &'a mut [f32]);
 
 /// Number of samplings per second
@@ -13,9 +19,37 @@ impl SamplingRate {
     pub fn value(self) -> usize {
         self.0
     }
+    pub fn max_frequency(self) -> Frequency {
+        Frequency::new((self.0 * 2) as f32)
+    }
 }
 /// Number of samples taken
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub struct SampleCount(usize);
+
+impl SampleCount {
+    pub fn new(samples: usize) -> Self {
+        Self(samples)
+    }
+
+    pub fn value(self) -> usize {
+        self.0
+    }
+}
+
+impl std::ops::Div<SamplingRate> for SampleCount {
+    type Output = Time;
+    fn div(self, rhs: SamplingRate) -> Self::Output {
+        Time::new((self.0 / rhs.0) as f32)
+    }
+}
+
+impl std::ops::Div<Time> for SampleCount {
+    type Output = SamplingRate;
+    fn div(self, rhs: Time) -> Self::Output {
+        SamplingRate::new((self.0 as f32 / rhs.value()) as usize)
+    }
+}
 
 impl From<usize> for SampleCount {
     fn from(value: usize) -> Self {

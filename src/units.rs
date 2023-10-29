@@ -1,3 +1,5 @@
+use crate::sampling::SampleCount;
+
 /// Time offset of a signal in terms of seconds
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub struct Time(f32);
@@ -11,6 +13,9 @@ impl Time {
     }
     pub fn value(self) -> f32 {
         self.0
+    }
+    pub fn frequency(self) -> Frequency {
+        Frequency(self.0.recip())
     }
 }
 
@@ -83,6 +88,40 @@ impl Frequency {
         Time(self.0.recip())
     }
 }
+
+impl std::ops::Div for Frequency {
+    type Output = f32;
+    fn div(self, rhs: Self) -> Self::Output {
+        self.0 / rhs.0
+    }
+}
+
+impl std::ops::Div<SampleCount> for Frequency {
+    type Output = Frequency;
+    fn div(self, rhs: SampleCount) -> Self::Output {
+        Self(self.0 / (rhs.value() as f32))
+    }
+}
+
+impl<T> std::ops::Mul<T> for Frequency
+where
+    T: std::ops::Mul<f32, Output = f32>,
+{
+    type Output = Frequency;
+    fn mul(self, rhs: T) -> Self::Output {
+        Self(rhs * self.0)
+    }
+}
+
+impl<T> std::ops::Div<T> for Frequency
+where
+    T: std::ops::Div<f32, Output = f32>,
+{
+    type Output = Frequency;
+    fn div(self, rhs: T) -> Self::Output {
+        Self(rhs / self.0)
+    }
+}
 /// Maximum amplitude of a signal
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub struct Amplitude(f32);
@@ -120,6 +159,16 @@ where
     type Output = Amplitude;
     fn mul(self, rhs: T) -> Self::Output {
         Self(rhs * self.0)
+    }
+}
+
+impl<T> std::ops::Div<T> for Amplitude
+where
+    T: std::ops::Div<f32, Output = f32>,
+{
+    type Output = Amplitude;
+    fn div(self, rhs: T) -> Self::Output {
+        Self(rhs / self.0)
     }
 }
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
