@@ -138,6 +138,16 @@ impl Amplitude {
     }
 }
 
+impl num::traits::Zero for Amplitude {
+    fn zero() -> Self {
+        Amplitude(0.0)
+    }
+
+    fn is_zero(&self) -> bool {
+        (Self::zero() <= *self) && (*self <= Self::zero())
+    }
+}
+
 impl std::ops::Add for Amplitude {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
@@ -182,7 +192,6 @@ impl Proportion {
         self.0
     }
 }
-
 trait Clampable<T> {
     fn clamp(self, lower: T, higher: T) -> T;
 }
@@ -190,5 +199,30 @@ trait Clampable<T> {
 impl Clampable<f32> for f32 {
     fn clamp(self, lower: f32, higher: f32) -> f32 {
         self.max(lower).min(higher)
+    }
+}
+
+pub struct RationalFraction<T>(T, T);
+
+impl<T> RationalFraction<T>
+where
+    T: std::ops::Mul<T, Output = T> + std::ops::Div<T, Output = T>,
+{
+    pub fn new(numerator: T, denominator: T) -> Self {
+        RationalFraction(numerator, denominator)
+    }
+
+    pub fn recip(self) -> Self {
+        RationalFraction(self.1, self.0)
+    }
+}
+
+impl<T> std::ops::Mul<T> for RationalFraction<T>
+where
+    T: std::ops::Mul<T, Output = T> + std::ops::Div<T, Output = T>,
+{
+    type Output = T;
+    fn mul(self, rhs: T) -> Self::Output {
+        (rhs * self.0) / self.1
     }
 }

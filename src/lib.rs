@@ -1,3 +1,4 @@
+pub use num;
 pub use rustfft as rfft;
 
 pub mod encodings;

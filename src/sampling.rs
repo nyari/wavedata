@@ -9,20 +9,6 @@ impl<'a> Samples<'a> {
 }
 pub struct SamplesMut<'a>(pub &'a mut [f32]);
 
-/// Number of samplings per second
-#[derive(Clone, Copy)]
-pub struct SamplingRate(usize);
-impl SamplingRate {
-    pub fn new(value: usize) -> Self {
-        Self(value)
-    }
-    pub fn value(self) -> usize {
-        self.0
-    }
-    pub fn max_frequency(self) -> Frequency {
-        Frequency::new((self.0 * 2) as f32)
-    }
-}
 /// Number of samples taken
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub struct SampleCount(usize);
@@ -56,6 +42,20 @@ impl From<usize> for SampleCount {
         Self(value)
     }
 }
+/// Number of samplings per second
+#[derive(Clone, Copy)]
+pub struct SamplingRate(usize);
+impl SamplingRate {
+    pub fn new(value: usize) -> Self {
+        Self(value)
+    }
+    pub fn value(self) -> usize {
+        self.0
+    }
+    pub fn max_frequency(self) -> Frequency {
+        Frequency::new((self.0 * 2) as f32)
+    }
+}
 
 impl SamplingRate {
     fn sample(&self, amount: SampleCount) -> Time {
@@ -66,6 +66,13 @@ impl SamplingRate {
 
     fn increment(&self) -> Time {
         Time::new(1.0f32 / (self.0 as f32))
+    }
+}
+
+impl std::ops::Mul<Time> for SamplingRate {
+    type Output = SampleCount;
+    fn mul(self, rhs: Time) -> Self::Output {
+        SampleCount::new((self.0 as f32 * rhs.value()).ceil() as usize)
     }
 }
 

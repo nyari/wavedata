@@ -7,6 +7,7 @@ use crate::{
     units::{Amplitude, Frequency, Time},
 };
 
+#[derive(Debug)]
 pub enum Error {
     FrequencyOutOfBounds,
 }
@@ -43,10 +44,14 @@ impl DFT {
     ) -> Result<&'a [Complex<f32>], Error> {
         let step = self.step();
         let item = (freq / step) as usize;
-        let radius = ((bandwidth / 2.0) / step) as usize;
+        if bandwidth / 2.0 <= freq {
+            let radius = ((bandwidth / 2.0) / step) as usize;
 
-        if SampleCount::new(item + radius) < self.sample_count() {
-            Ok(&self.dft[item - radius..item + radius])
+            if SampleCount::new(item + radius) < self.sample_count() {
+                Ok(&self.dft[item - radius..item + radius + 1])
+            } else {
+                Err(Error::FrequencyOutOfBounds)
+            }
         } else {
             Err(Error::FrequencyOutOfBounds)
         }

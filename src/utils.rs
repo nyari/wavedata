@@ -1,5 +1,31 @@
+pub fn convolve1d<T>(signal: &[T], kernel: &[T], result: &mut [T])
+where
+    T: std::ops::Add<T, Output = T> + std::ops::Mul<T, Output = T> + num::traits::Zero + Clone,
+{
+    signal
+        .windows(kernel.len())
+        .map(|window| {
+            window
+                .iter()
+                .zip(kernel.iter())
+                .fold(T::zero(), |acc, (lhs, rhs)| acc + lhs.clone() * rhs.clone())
+        })
+        .enumerate()
+        .for_each(|(idx, value)| result[idx] = value);
+
+    let padding_idx = signal.len() - kernel.len() + 1;
+    for signal_idx in padding_idx..signal.len() {
+        result[signal_idx] = T::zero();
+        for idx in signal_idx..signal.len() {
+            let kernel_idx = idx - signal_idx;
+            result[signal_idx] =
+                result[signal_idx].clone() + (signal[idx].clone() * kernel[kernel_idx].clone());
+        }
+    }
+}
+
 #[derive(PartialEq, PartialOrd)]
-struct BitIndex(usize, u8);
+pub struct BitIndex(usize, u8);
 
 impl BitIndex {
     pub fn new(idx: usize) -> Self {
