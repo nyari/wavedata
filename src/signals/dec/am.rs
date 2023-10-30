@@ -23,7 +23,6 @@ pub struct Parameters {
     sampling_rate: SamplingRate,
     transition_sr: SamplingRate,
     transition_window_sample_count: SampleCount,
-    transition_window_movement_amount: SampleCount,
     transition_convolution_kernels: (Box<[Amplitude]>, Box<[Amplitude]>),
 }
 
@@ -39,7 +38,8 @@ impl Parameters {
     ) -> Self {
         let baud_length = baudrate.cycle_time();
         let transition_width = baud_length * transition_width_proportion.value();
-        let transition_window_sample_count = sampling_rate * transition_width;
+        let transition_window_sample_count =
+            sampling_rate * transition_width / transition_window_movement_divisor;
         Self {
             carrier_frequency: carrier_frequency,
             carrier_bandwidth: Self::caluclate_bandwidth(carrier_frequency, transition_width),
@@ -47,11 +47,6 @@ impl Parameters {
             sampling_rate: sampling_rate,
             transition_sr: transition_sr,
             transition_window_sample_count: transition_window_sample_count,
-            transition_window_movement_amount: SampleCount::new(std::cmp::max(
-                RationalFraction::new(1, transition_window_movement_divisor)
-                    * transition_window_sample_count.value(),
-                1,
-            )),
             transition_convolution_kernels: Self::transition_convolution_kernel(
                 transition_window_sample_count,
             ),

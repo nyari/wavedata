@@ -37,6 +37,13 @@ impl std::ops::Div<Time> for SampleCount {
     }
 }
 
+impl std::ops::Div<usize> for SampleCount {
+    type Output = SampleCount;
+    fn div(self, rhs: usize) -> Self::Output {
+        SampleCount(self.0 / rhs)
+    }
+}
+
 impl From<usize> for SampleCount {
     fn from(value: usize) -> Self {
         Self(value)

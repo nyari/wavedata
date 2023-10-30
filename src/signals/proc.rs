@@ -12,6 +12,15 @@ pub enum Error {
     FrequencyOutOfBounds,
 }
 
+mod dft {
+    pub fn step(
+        sample_count: super::SampleCount,
+        max_frequency: super::Frequency,
+    ) -> super::Frequency {
+        max_frequency / sample_count
+    }
+}
+
 pub struct DFT {
     dft: Box<[Complex<f32>]>,
     length: Time,
@@ -32,9 +41,7 @@ impl DFT {
     }
 
     pub fn step(&self) -> Frequency {
-        let sample_count = self.sample_count();
-        let max = self.max_frequency();
-        max / sample_count
+        dft::step(self.sample_count(), self.max_frequency())
     }
 
     pub fn band<'a>(
