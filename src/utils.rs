@@ -100,3 +100,29 @@ impl BitVec {
         b | (0b_1_u8 << n)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    pub use super::*;
+
+    #[test]
+    pub fn convolve1d_samples_and_kernel_same_length() {
+        let samples = vec![-1, -1, 0, 1, 1];
+        let kernel = vec![-1, -1, 0, 1, 1];
+        let mut output = [0; 5];
+
+        convolve1d(&samples, &kernel, &mut output);
+
+        assert_eq!(output, [4, 2, -1, -2, -1])
+    }
+
+    pub fn convolve1d_samples_longere_than_kernel() {
+        let samples = vec![-1, -1, 0, 1, 1, 1, 1, 0, -1, -1];
+        let kernel = vec![-1, -1, 0, 1, 1];
+        let mut output = [0; 10];
+
+        convolve1d(&samples, &kernel, &mut output);
+
+        assert_eq!(output, [4, 3, 1, -1, -3, -4, -2, 1, 2, 1])
+    }
+}
