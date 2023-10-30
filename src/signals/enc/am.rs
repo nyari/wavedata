@@ -269,7 +269,7 @@ mod tests {
         ); // End EOF 4
         assert!(matches!(
             nrz.advance_with(Time::new(0.5)),
-            Err(super::super::Error::Finished)
+            Err(crate::signals::Error::Finished)
         ));
     }
 }
