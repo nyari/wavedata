@@ -136,6 +136,9 @@ impl Amplitude {
     pub fn zero() -> Self {
         Self(0.0)
     }
+    pub fn relative_to(self, rhs: Self) -> Proportion {
+        Proportion(self.0 / rhs.0)
+    }
 }
 
 impl num::traits::Zero for Amplitude {
@@ -152,6 +155,13 @@ impl std::ops::Add for Amplitude {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         Self(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Mul for Amplitude {
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self(self.0 * rhs.0)
     }
 }
 
@@ -190,6 +200,9 @@ impl Proportion {
     }
     pub fn value(self) -> f32 {
         self.0
+    }
+    pub fn zero() -> Self {
+        Self(0.0f32)
     }
 }
 trait Clampable<T> {

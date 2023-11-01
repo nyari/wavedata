@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 pub fn convolve1d<T>(signal: &[T], kernel: &[T], result: &mut [T])
 where
     T: std::ops::Add<T, Output = T> + std::ops::Mul<T, Output = T> + num::traits::Zero + Clone,
@@ -28,6 +30,20 @@ where
                 *result_elem = result_elem.clone() + (signal_elem * kernel_elem);
             }
         })
+}
+
+pub fn median_non_averaged<T>(input: &[T]) -> Result<T, ()>
+where
+    T: PartialOrd + Clone,
+{
+    let mut ordered = Vec::new();
+    ordered.extend(input.iter());
+    ordered.sort_by(|lhs, rhs| lhs.partial_cmp(rhs).unwrap());
+    if ordered.is_empty() {
+        Err(())
+    } else {
+        Ok(ordered[ordered.len() / 2].clone())
+    }
 }
 
 #[derive(PartialEq, PartialOrd)]

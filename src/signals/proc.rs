@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use num::complex::ComplexFloat;
 use rustfft::{num_complex::Complex, num_traits::Zero, Fft};
 
 use crate::{
@@ -12,12 +13,12 @@ pub enum Error {
     FrequencyOutOfBounds,
 }
 
-mod dft {
+pub mod dft {
     pub fn step(
         sample_count: super::SampleCount,
         max_frequency: super::Frequency,
     ) -> super::Frequency {
-        max_frequency / sample_count
+        max_frequency / (sample_count / 2)
     }
 }
 
@@ -41,7 +42,7 @@ impl DFT {
     }
 
     pub fn step(&self) -> Frequency {
-        dft::step(self.sample_count(), self.max_frequency())
+        dft::step(SampleCount::new(self.dft.len()), self.max_frequency())
     }
 
     pub fn band<'a>(
@@ -72,7 +73,7 @@ impl DFT {
         let band = self.band(freq, bandwidth)?;
         let samples_count = band.len();
         Ok(band.iter().fold(Amplitude::new(0.0), |acc, elem| {
-            acc + Amplitude::new(elem.re.abs())
+            acc + Amplitude::new(elem.abs())
         }) / (samples_count) as f32)
     }
 }
