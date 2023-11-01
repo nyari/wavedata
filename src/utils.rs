@@ -2,26 +2,32 @@ pub fn convolve1d<T>(signal: &[T], kernel: &[T], result: &mut [T])
 where
     T: std::ops::Add<T, Output = T> + std::ops::Mul<T, Output = T> + num::traits::Zero + Clone,
 {
-    signal
-        .windows(kernel.len())
-        .map(|window| {
-            window
-                .iter()
-                .zip(kernel.iter())
-                .fold(T::zero(), |acc, (lhs, rhs)| acc + lhs.clone() * rhs.clone())
-        })
-        .enumerate()
-        .for_each(|(idx, value)| result[idx] = value);
-
-    let padding_idx = signal.len() - kernel.len() + 1;
-    for signal_idx in padding_idx..signal.len() {
-        result[signal_idx] = T::zero();
-        for idx in signal_idx..signal.len() {
-            let kernel_idx = idx - signal_idx;
-            result[signal_idx] =
-                result[signal_idx].clone() + (signal[idx].clone() * kernel[kernel_idx].clone());
-        }
+    if signal.len() != result.len() {
+        panic!("Input signal and result output lenghts differ for convolution");
     }
+
+    let half_kernel_len = (kernel.len() / 2) as isize;
+
+    result
+        .iter_mut()
+        .enumerate()
+        .for_each(|(idxusize, result_elem)| {
+            let idx = idxusize as isize;
+
+            let signal_start_idx = std::cmp::max(0, idx - half_kernel_len) as usize;
+            let kernel_start_idx = std::cmp::max(half_kernel_len - idx, 0) as usize;
+            let kernel_end_idx = std::cmp::min(
+                kernel.len(),
+                signal.len() + (half_kernel_len as usize) - idxusize,
+            );
+
+            for kernel_idx in kernel_start_idx..kernel_end_idx {
+                let signal_elem =
+                    signal[signal_start_idx + (kernel_idx - kernel_start_idx)].clone();
+                let kernel_elem = kernel[kernel_idx].clone();
+                *result_elem = result_elem.clone() + (signal_elem * kernel_elem);
+            }
+        })
 }
 
 #[derive(PartialEq, PartialOrd)]
@@ -113,16 +119,28 @@ mod tests {
 
         convolve1d(&samples, &kernel, &mut output);
 
-        assert_eq!(output, [4, 2, -1, -2, -1])
+        assert_eq!(output, [-1, 2, 4, 2, -1])
     }
 
-    pub fn convolve1d_samples_longere_than_kernel() {
+    #[test]
+    pub fn convolve1d_samples_5_kernel_even_6() {
+        let samples = vec![-1, -1, 0, 1, 1];
+        let kernel = vec![-1, -1, -1, 1, 1, 1];
+        let mut output = [0; 5];
+
+        convolve1d(&samples, &kernel, &mut output);
+
+        assert_eq!(output, [-2, 1, 4, 4, 1])
+    }
+
+    #[test]
+    pub fn convolve1d_samples_longer_than_kernel() {
         let samples = vec![-1, -1, 0, 1, 1, 1, 1, 0, -1, -1];
         let kernel = vec![-1, -1, 0, 1, 1];
         let mut output = [0; 10];
 
         convolve1d(&samples, &kernel, &mut output);
 
-        assert_eq!(output, [4, 3, 1, -1, -3, -4, -2, 1, 2, 1])
+        assert_eq!(output, [-1, 2, 4, 3, 1, -1, -3, -4, -2, 1])
     }
 }
