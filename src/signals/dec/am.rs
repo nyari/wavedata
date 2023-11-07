@@ -22,7 +22,6 @@ pub struct Parameters {
     carrier_frequency: Frequency,
     carrier_bandwidth: Frequency,
     sampling_rate: SamplingRate,
-    transition_window_sc: SampleCount,
     fft_window_sc: SampleCount,
     max_trainsition_distance: usize,
     transition_convolution_kernels: (Box<[Amplitude]>, Box<[Amplitude]>),
@@ -35,12 +34,10 @@ impl Parameters {
         transition_width_proportion: Proportion,
         max_trainsition_distance: usize,
         sampling_rate: SamplingRate,
-        transition_sr: SamplingRate,
         transition_window_movement_divisor: usize,
     ) -> Self {
         let baud_length = baudrate.cycle_time();
-        let transition_width = baud_length * transition_width_proportion.value();
-        let transition_window_sample_count = sampling_rate * transition_width;
+        let transition_window_sample_count = sampling_rate * baud_length;
         Self {
             carrier_frequency: carrier_frequency,
             carrier_bandwidth: dft::step(
@@ -48,22 +45,12 @@ impl Parameters {
                 sampling_rate.max_frequency(),
             ),
             sampling_rate: sampling_rate,
-            transition_window_sc: transition_window_sample_count,
             fft_window_sc: transition_window_sample_count / transition_window_movement_divisor,
             max_trainsition_distance: max_trainsition_distance,
             transition_convolution_kernels: Self::transition_convolution_kernel(
                 sampling_rate * baud_length,
                 transition_width_proportion,
             ),
-        }
-    }
-
-    pub fn caluclate_bandwidth(carrier_frequency: Frequency, transition_width: Time) -> Frequency {
-        let transition_frequency = transition_width.frequency();
-        if carrier_frequency < transition_frequency {
-            carrier_frequency
-        } else {
-            transition_frequency
         }
     }
 
@@ -268,5 +255,20 @@ mod tests {
             falling_kernel,
             as_amplitudes(&[1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
         )
+    }
+
+    #[test]
+    pub fn parameters_test_0() {
+        let parameters = Parameters::new(
+            Frequency::new(20000.0),
+            Frequency::new(100.0),
+            Proportion::new(0.25),
+            5,
+            SamplingRate::new(44100),
+            32,
+        );
+
+        assert_eq!(parameters.carrier_frequency, Frequency::new(20000.0));
+        assert_eq!(parameters.carrier_bandwidth, Frequency::new(25.0));
     }
 }

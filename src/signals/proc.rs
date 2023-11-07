@@ -18,7 +18,7 @@ pub mod dft {
         sample_count: super::SampleCount,
         max_frequency: super::Frequency,
     ) -> super::Frequency {
-        max_frequency / (sample_count / 2)
+        max_frequency / (sample_count * 2)
     }
 }
 

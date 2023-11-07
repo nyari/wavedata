@@ -44,6 +44,13 @@ impl std::ops::Div<usize> for SampleCount {
     }
 }
 
+impl std::ops::Mul<usize> for SampleCount {
+    type Output = SampleCount;
+    fn mul(self, rhs: usize) -> Self::Output {
+        SampleCount(self.0 * rhs)
+    }
+}
+
 impl std::ops::Mul<Proportion> for SampleCount {
     type Output = Self;
     fn mul(self, rhs: Proportion) -> Self::Output {
@@ -68,7 +75,7 @@ impl SamplingRate {
         self.0
     }
     pub fn max_frequency(self) -> Frequency {
-        Frequency::new((self.0 * 2) as f32)
+        Frequency::new((self.0 / 2) as f32)
     }
 }
 
