@@ -1,4 +1,4 @@
-use crate::units::{Amplitude, Frequency, Time};
+use crate::units::{Amplitude, Frequency, Proportion, Time};
 
 pub struct Samples<'a>(pub &'a [f32]);
 
@@ -41,6 +41,14 @@ impl std::ops::Div<usize> for SampleCount {
     type Output = SampleCount;
     fn div(self, rhs: usize) -> Self::Output {
         SampleCount(self.0 / rhs)
+    }
+}
+
+impl std::ops::Mul<Proportion> for SampleCount {
+    type Output = Self;
+    fn mul(self, rhs: Proportion) -> Self::Output {
+        let result_value = self.0 as f32 * rhs.value();
+        SampleCount(result_value as usize)
     }
 }
 

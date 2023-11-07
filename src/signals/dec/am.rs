@@ -52,7 +52,8 @@ impl Parameters {
             fft_window_sc: transition_window_sample_count / transition_window_movement_divisor,
             max_trainsition_distance: max_trainsition_distance,
             transition_convolution_kernels: Self::transition_convolution_kernel(
-                transition_window_sample_count,
+                sampling_rate * baud_length,
+                transition_width_proportion,
             ),
         }
     }
@@ -68,9 +69,14 @@ impl Parameters {
 
     pub fn transition_convolution_kernel(
         transition_window_sample_count: SampleCount,
+        transition_proportion: Proportion,
     ) -> (Box<[Amplitude]>, Box<[Amplitude]>) {
+        let transition_length = std::cmp::max(
+            (transition_window_sample_count * transition_proportion).value(),
+            1usize,
+        );
         let plateau_length = std::cmp::max(
-            RationalFraction::new(2usize, 10usize) * transition_window_sample_count.value(),
+            RationalFraction::new(1usize, 2usize) * transition_length,
             1usize,
         );
 
@@ -79,8 +85,7 @@ impl Parameters {
         result[0..plateau_length]
             .iter_mut()
             .for_each(|value| *value = Amplitude::new(-1.0));
-        result[transition_window_sample_count.value() - plateau_length
-            ..transition_window_sample_count.value()]
+        result[transition_length - plateau_length..transition_window_sample_count.value()]
             .iter_mut()
             .for_each(|value| *value = Amplitude::new(1.0));
 
@@ -221,5 +226,32 @@ impl TransitionDecoder {
 
         let samples_to_take = (source.len() / samples_needed) * samples_needed;
         target.extend(source.drain(0..samples_to_take));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn as_amplitudes(input: &[f32]) -> Box<[Amplitude]> {
+        input
+            .iter()
+            .map(|val| Amplitude::new(*val))
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    }
+
+    #[test]
+    pub fn edge_conv_kernel_test_0() {
+        let (rising_kernel, falling_kernel) =
+            Parameters::transition_convolution_kernel(SampleCount::new(10), Proportion::new(0.5));
+
+        assert_eq!(
+            rising_kernel,
+            as_amplitudes(&[-1.0, -1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        );
+        assert_eq!(
+            falling_kernel,
+            as_amplitudes(&[1.0, 1.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
+        )
     }
 }
