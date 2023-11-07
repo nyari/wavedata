@@ -254,4 +254,19 @@ mod tests {
             as_amplitudes(&[1.0, 1.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
         )
     }
+
+    #[test]
+    pub fn edge_conv_kernel_test_1() {
+        let (rising_kernel, falling_kernel) =
+            Parameters::transition_convolution_kernel(SampleCount::new(12), Proportion::new(0.5));
+
+        assert_eq!(
+            rising_kernel,
+            as_amplitudes(&[-1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        );
+        assert_eq!(
+            falling_kernel,
+            as_amplitudes(&[1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
+        )
+    }
 }
