@@ -24,7 +24,7 @@ pub struct Parameters {
     sampling_rate: SamplingRate,
     fft_window_sc: SampleCount,
     max_trainsition_distance: usize,
-    transition_convolution_kernels: (Box<[Amplitude]>, Box<[Amplitude]>),
+    transition_convolution_kernels: (Box<[Amplitude]>, Box<[Amplitude]>, usize),
 }
 
 impl Parameters {
@@ -57,7 +57,7 @@ impl Parameters {
     pub fn transition_convolution_kernel(
         transition_window_sample_count: SampleCount,
         transition_proportion: Proportion,
-    ) -> (Box<[Amplitude]>, Box<[Amplitude]>) {
+    ) -> (Box<[Amplitude]>, Box<[Amplitude]>, usize) {
         let transition_length = std::cmp::max(
             (transition_window_sample_count * transition_proportion).value(),
             1usize,
@@ -72,16 +72,23 @@ impl Parameters {
         result[0..plateau_length]
             .iter_mut()
             .for_each(|value| *value = Amplitude::new(1.0));
-        result[transition_length - plateau_length..transition_window_sample_count.value()]
+        result[transition_length - plateau_length..transition_length]
             .iter_mut()
             .for_each(|value| *value = Amplitude::new(-1.0));
+        result[transition_length..transition_window_sample_count.value()]
+            .iter_mut()
+            .for_each(|value| {
+                *value = Amplitude::new(
+                    -1.0 / (transition_window_sample_count.value() - plateau_length) as f32,
+                )
+            });
 
         let rising_edge = result.clone().into_boxed_slice();
         result
             .iter_mut()
             .for_each(|value| *value = Amplitude::new(-value.value()));
 
-        (rising_edge, result.into_boxed_slice())
+        (rising_edge, result.into_boxed_slice(), plateau_length)
     }
 }
 
@@ -109,13 +116,13 @@ impl State {
     }
 }
 
-struct TansitionSearch {
+struct TransitionSearch {
     convolved: Box<[Amplitude]>,
     median: Amplitude,
     max: Amplitude,
 }
 
-impl TansitionSearch {
+impl TransitionSearch {
     pub fn process(signals: &[Amplitude], kernel: &[Amplitude]) -> Self {
         let mut res = Vec::with_capacity(signals.len());
         res.resize(signals.len(), Amplitude::zero());
@@ -176,12 +183,12 @@ impl TransitionDecoder {
     fn search(&mut self) {
         self.m.monitor_windows.make_contiguous();
 
-        let rising = TansitionSearch::process(
+        let rising = TransitionSearch::process(
             self.m.monitor_windows.as_slices().0,
             &self.c.transition_convolution_kernels.0,
         );
 
-        let falling = TansitionSearch::process(
+        let falling = TransitionSearch::process(
             self.m.monitor_windows.as_slices().0,
             &self.c.transition_convolution_kernels.1,
         );
@@ -229,32 +236,82 @@ mod tests {
 
     #[test]
     pub fn edge_conv_kernel_test_0() {
-        let (rising_kernel, falling_kernel) =
+        let (rising_kernel, falling_kernel, plateau_length) =
             Parameters::transition_convolution_kernel(SampleCount::new(10), Proportion::new(0.5));
 
         assert_eq!(
             rising_kernel,
-            as_amplitudes(&[1.0, 1.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
+            as_amplitudes(&[
+                1.0,
+                1.0,
+                0.0,
+                -1.0,
+                -1.0,
+                -1.0 / 8.0,
+                -1.0 / 8.0,
+                -1.0 / 8.0,
+                -1.0 / 8.0,
+                -1.0 / 8.0
+            ])
         );
         assert_eq!(
             falling_kernel,
-            as_amplitudes(&[-1.0, -1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-        )
+            as_amplitudes(&[
+                -1.0,
+                -1.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0 / 8.0,
+                1.0 / 8.0,
+                1.0 / 8.0,
+                1.0 / 8.0,
+                1.0 / 8.0
+            ])
+        );
+        assert_eq!(plateau_length, 2);
     }
 
     #[test]
     pub fn edge_conv_kernel_test_1() {
-        let (rising_kernel, falling_kernel) =
+        let (rising_kernel, falling_kernel, plateau_length) =
             Parameters::transition_convolution_kernel(SampleCount::new(12), Proportion::new(0.5));
 
         assert_eq!(
             rising_kernel,
-            as_amplitudes(&[1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
+            as_amplitudes(&[
+                1.0,
+                1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                -1.0 / 9.0,
+                -1.0 / 9.0,
+                -1.0 / 9.0,
+                -1.0 / 9.0,
+                -1.0 / 9.0,
+                -1.0 / 9.0
+            ])
         );
         assert_eq!(
             falling_kernel,
-            as_amplitudes(&[-1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-        )
+            as_amplitudes(&[
+                -1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0 / 9.0,
+                1.0 / 9.0,
+                1.0 / 9.0,
+                1.0 / 9.0,
+                1.0 / 9.0,
+                1.0 / 9.0
+            ])
+        );
+        assert_eq!(plateau_length, 3);
     }
 
     #[test]
@@ -295,5 +352,25 @@ mod tests {
         assert_eq!(parameters.max_trainsition_distance, 5);
         assert_eq!(parameters.transition_convolution_kernels.0.len(), 45);
         assert_eq!(parameters.transition_convolution_kernels.1.len(), 45);
+    }
+
+    #[test]
+    pub fn transition_search_0_high_snr() {
+        let signal: [f32; 8] = [0.1, 0.1, 0.1, 0.7, 1.0, 1.0, 1.0, 1.0];
+        let kernel: [f32; 3] = [-1.0, 0.0, 1.0];
+        let search = TransitionSearch::process(&as_amplitudes(&signal), &as_amplitudes(&kernel));
+        assert_eq!(search.median, Amplitude::new(0.1));
+        assert_eq!(search.max, Amplitude::new(0.9));
+        assert_eq!(search.snr(), Proportion::new(9.0));
+    }
+
+    #[test]
+    pub fn transition_search_1_low_snr() {
+        let signal: [f32; 8] = [0.98, 0.98, 0.98, 0.99, 1.0, 1.0, 1.0, 1.0];
+        let kernel: [f32; 3] = [-1.0, 0.0, 1.0];
+        let search = TransitionSearch::process(&as_amplitudes(&signal), &as_amplitudes(&kernel));
+        assert_eq!(search.median, Amplitude::new(0.099999964));
+        assert_eq!(search.max, Amplitude::new(0.8));
+        assert_eq!(search.snr(), Proportion::new(8.000003));
     }
 }
