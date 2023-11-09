@@ -71,10 +71,10 @@ impl Parameters {
         result.resize(transition_window_sample_count.value(), Amplitude::zero());
         result[0..plateau_length]
             .iter_mut()
-            .for_each(|value| *value = Amplitude::new(-1.0));
+            .for_each(|value| *value = Amplitude::new(1.0));
         result[transition_length - plateau_length..transition_window_sample_count.value()]
             .iter_mut()
-            .for_each(|value| *value = Amplitude::new(1.0));
+            .for_each(|value| *value = Amplitude::new(-1.0));
 
         let rising_edge = result.clone().into_boxed_slice();
         result
@@ -234,11 +234,11 @@ mod tests {
 
         assert_eq!(
             rising_kernel,
-            as_amplitudes(&[-1.0, -1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+            as_amplitudes(&[1.0, 1.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
         );
         assert_eq!(
             falling_kernel,
-            as_amplitudes(&[1.0, 1.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
+            as_amplitudes(&[-1.0, -1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
         )
     }
 
@@ -249,11 +249,11 @@ mod tests {
 
         assert_eq!(
             rising_kernel,
-            as_amplitudes(&[-1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+            as_amplitudes(&[1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
         );
         assert_eq!(
             falling_kernel,
-            as_amplitudes(&[1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
+            as_amplitudes(&[-1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
         )
     }
 
