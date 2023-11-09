@@ -10,7 +10,7 @@ impl<'a> Samples<'a> {
 pub struct SamplesMut<'a>(pub &'a mut [f32]);
 
 /// Number of samples taken
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct SampleCount(usize);
 
 impl SampleCount {
@@ -65,7 +65,7 @@ impl From<usize> for SampleCount {
     }
 }
 /// Number of samplings per second
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub struct SamplingRate(usize);
 impl SamplingRate {
     pub fn new(value: usize) -> Self {

@@ -270,5 +270,30 @@ mod tests {
 
         assert_eq!(parameters.carrier_frequency, Frequency::new(20000.0));
         assert_eq!(parameters.carrier_bandwidth, Frequency::new(25.0));
+        assert_eq!(parameters.sampling_rate, SamplingRate::new(44100));
+        assert_eq!(parameters.fft_window_sc, SampleCount::new(13));
+        assert_eq!(parameters.max_trainsition_distance, 5);
+        assert_eq!(parameters.transition_convolution_kernels.0.len(), 441);
+        assert_eq!(parameters.transition_convolution_kernels.1.len(), 441);
+    }
+
+    #[test]
+    pub fn parameters_test_1() {
+        let parameters = Parameters::new(
+            Frequency::new(20000.0),
+            Frequency::new(1000.0),
+            Proportion::new(0.25),
+            5,
+            SamplingRate::new(44100),
+            32,
+        );
+
+        assert_eq!(parameters.carrier_frequency, Frequency::new(20000.0));
+        assert_eq!(parameters.carrier_bandwidth, Frequency::new(245.0));
+        assert_eq!(parameters.sampling_rate, SamplingRate::new(44100));
+        assert_eq!(parameters.fft_window_sc, SampleCount::new(1));
+        assert_eq!(parameters.max_trainsition_distance, 5);
+        assert_eq!(parameters.transition_convolution_kernels.0.len(), 45);
+        assert_eq!(parameters.transition_convolution_kernels.1.len(), 45);
     }
 }
