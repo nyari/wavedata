@@ -127,7 +127,7 @@ impl TransitionSearch {
         let mut res = Vec::with_capacity(signals.len());
         res.resize(signals.len(), Amplitude::zero());
         let mut convolved = res.into_boxed_slice();
-        utils::convolve1d(signals, kernel, &mut convolved);
+        utils::conv1d::same(signals, kernel, &mut convolved);
 
         let median = utils::median_non_averaged(&convolved).unwrap_or(Amplitude::zero());
         let max = *convolved
