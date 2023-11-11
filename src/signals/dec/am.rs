@@ -379,4 +379,14 @@ mod tests {
         assert_eq!(search.max, Amplitude::new(0.01999998));
         assert_eq!(search.snr(), Proportion::new(2.0));
     }
+
+    #[test]
+    pub fn transition_search_2_no_signal() {
+        let signal: [f32; 8] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let kernel: [f32; 3] = [-0.5, 0.0, 1.0];
+        let search = TransitionSearch::process(&as_amplitudes(&signal), &as_amplitudes(&kernel));
+        assert_eq!(search.median, Amplitude::new(0.5));
+        assert_eq!(search.max, Amplitude::new(0.5));
+        assert_eq!(search.snr(), Proportion::new(1.0));
+    }
 }
