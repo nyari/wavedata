@@ -124,10 +124,11 @@ struct TransitionSearch {
 
 impl TransitionSearch {
     pub fn process(signals: &[Amplitude], kernel: &[Amplitude]) -> Self {
-        let mut res = Vec::with_capacity(signals.len());
-        res.resize(signals.len(), Amplitude::zero());
+        let res_len = utils::conv1d::valid_result_length(signals.len(), kernel.len());
+        let mut res = Vec::with_capacity(res_len);
+        res.resize(res_len, Amplitude::zero());
         let mut convolved = res.into_boxed_slice();
-        utils::conv1d::same(signals, kernel, &mut convolved);
+        utils::conv1d::valid(signals, kernel, &mut convolved).unwrap();
 
         let median = utils::median_non_averaged(&convolved).unwrap_or(Amplitude::zero());
         let max = *convolved
@@ -143,7 +144,12 @@ impl TransitionSearch {
     }
 
     pub fn snr(&self) -> Proportion {
-        self.max.relative_to(self.median)
+        let median = if self.median > Amplitude::zero() {
+            self.median
+        } else {
+            Amplitude::new(f32::EPSILON)
+        };
+        self.max.relative_to(median)
     }
 }
 
@@ -356,12 +362,12 @@ mod tests {
 
     #[test]
     pub fn transition_search_0_high_snr() {
-        let signal: [f32; 8] = [0.1, 0.1, 0.1, 0.7, 1.0, 1.0, 1.0, 1.0];
+        let signal: [f32; 8] = [0.1, 0.1, 0.2, 0.7, 1.0, 1.0, 0.9, 0.9];
         let kernel: [f32; 3] = [-1.0, 0.0, 1.0];
         let search = TransitionSearch::process(&as_amplitudes(&signal), &as_amplitudes(&kernel));
-        assert_eq!(search.median, Amplitude::new(0.1));
-        assert_eq!(search.max, Amplitude::new(0.9));
-        assert_eq!(search.snr(), Proportion::new(9.0));
+        assert_eq!(search.median, Amplitude::new(0.3));
+        assert_eq!(search.max, Amplitude::new(0.8));
+        assert_eq!(search.snr(), Proportion::new(2.6666665));
     }
 
     #[test]
@@ -369,8 +375,8 @@ mod tests {
         let signal: [f32; 8] = [0.98, 0.98, 0.98, 0.99, 1.0, 1.0, 1.0, 1.0];
         let kernel: [f32; 3] = [-1.0, 0.0, 1.0];
         let search = TransitionSearch::process(&as_amplitudes(&signal), &as_amplitudes(&kernel));
-        assert_eq!(search.median, Amplitude::new(0.099999964));
-        assert_eq!(search.max, Amplitude::new(0.8));
-        assert_eq!(search.snr(), Proportion::new(8.000003));
+        assert_eq!(search.median, Amplitude::new(0.00999999));
+        assert_eq!(search.max, Amplitude::new(0.01999998));
+        assert_eq!(search.snr(), Proportion::new(2.0));
     }
 }
