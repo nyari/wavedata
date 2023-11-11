@@ -151,6 +151,16 @@ impl TransitionSearch {
         };
         self.max.relative_to(median)
     }
+
+    pub fn max_index(&self) -> usize {
+        self.convolved
+            .iter()
+            .enumerate()
+            .find(|(idx, item)| item >= &&self.max)
+            .unwrap()
+            .0
+            .clone()
+    }
 }
 
 pub struct TransitionDecoder {
@@ -368,6 +378,7 @@ mod tests {
         assert_eq!(search.median, Amplitude::new(0.3));
         assert_eq!(search.max, Amplitude::new(0.8));
         assert_eq!(search.snr(), Proportion::new(2.6666665));
+        assert_eq!(search.max_index(), 2);
     }
 
     #[test]
@@ -378,6 +389,7 @@ mod tests {
         assert_eq!(search.median, Amplitude::new(0.00999999));
         assert_eq!(search.max, Amplitude::new(0.01999998));
         assert_eq!(search.snr(), Proportion::new(2.0));
+        assert_eq!(search.max_index(), 2);
     }
 
     #[test]
@@ -388,5 +400,6 @@ mod tests {
         assert_eq!(search.median, Amplitude::new(0.5));
         assert_eq!(search.max, Amplitude::new(0.5));
         assert_eq!(search.snr(), Proportion::new(1.0));
+        assert_eq!(search.max_index(), 0);
     }
 }
