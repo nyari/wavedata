@@ -150,6 +150,33 @@ where
     }
 }
 
+pub struct WindowedWeightedAverage<T> {
+    value: T,
+    internal_weight: T,
+}
+
+impl<T> WindowedWeightedAverage<T> {
+    pub fn new(initial_value: T, internal_weight: T) -> Self {
+        Self {
+            value: initial_value,
+            internal_weight: internal_weight,
+        }
+    }
+}
+
+impl<T> WindowedWeightedAverage<T>
+where
+    T: std::ops::Add<T, Output = T>
+        + std::ops::Mul<T, Output = T>
+        + std::ops::Div<T, Output = T>
+        + Clone,
+{
+    pub fn acc(&mut self, value: T, weight: T) {
+        self.value = (self.value.clone() * self.internal_weight.clone() + value * weight.clone())
+            / (self.internal_weight.clone() + weight.clone())
+    }
+}
+
 #[derive(PartialEq, PartialOrd)]
 pub struct BitIndex(usize, u8);
 

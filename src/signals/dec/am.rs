@@ -3,19 +3,39 @@ use std::collections::VecDeque;
 use crate::{
     sampling::{SampleCount, Samples, SamplingRate},
     signals::proc::{dft, FFT},
-    units::{Amplitude, Frequency, Proportion, RationalFraction, Time},
+    units::{Amplitude, Frequency, Proportion, RationalFraction},
     utils,
 };
 
-pub enum TransitionState {
-    Hold(usize),
-    Risng,
-    Falling,
+#[derive(Debug, Clone, Copy)]
+enum Error {
+    IncorrectTransition,
 }
 
+#[derive(Clone, Copy)]
+pub enum TransitionState {
+    Hold(usize),
+    Rising,
+    Falling,
+    Noise(usize),
+}
+
+impl TransitionState {
+    pub fn transition(&mut self, ts: Self) {
+        *self = match (*self, ts) {
+            (Self::Rising, Self::Rising) => Self::Noise(0),
+            (Self::Falling, Self::Falling) => Self::Noise(0),
+            (Self::Noise(pre), Self::Noise(add)) => Self::Noise(pre + add),
+            (Self::Hold(pre), Self::Hold(add)) => Self::Hold(pre + add),
+            _ => ts,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 enum StateMachine {
     Searching,
-    Synchronized(usize),
+    Synchronized,
 }
 
 pub struct Parameters {
@@ -25,6 +45,7 @@ pub struct Parameters {
     fft_window_sc: SampleCount,
     max_trainsition_distance: usize,
     transition_convolution_kernels: (Box<[Amplitude]>, Box<[Amplitude]>, usize),
+    min_snr: Proportion,
 }
 
 impl Parameters {
@@ -35,9 +56,11 @@ impl Parameters {
         max_trainsition_distance: usize,
         sampling_rate: SamplingRate,
         transition_window_movement_divisor: usize,
+        min_snr: Proportion,
     ) -> Self {
         let baud_length = baudrate.cycle_time();
         let transition_window_sample_count = sampling_rate * baud_length;
+        let fft_window_sc = transition_window_sample_count / transition_window_movement_divisor;
         Self {
             carrier_frequency: carrier_frequency,
             carrier_bandwidth: dft::step(
@@ -45,21 +68,26 @@ impl Parameters {
                 sampling_rate.max_frequency(),
             ),
             sampling_rate: sampling_rate,
-            fft_window_sc: transition_window_sample_count / transition_window_movement_divisor,
+            fft_window_sc: fft_window_sc,
             max_trainsition_distance: max_trainsition_distance,
             transition_convolution_kernels: Self::transition_convolution_kernel(
-                sampling_rate * baud_length,
+                SampleCount::new(transition_window_movement_divisor),
                 transition_width_proportion,
             ),
+            min_snr: min_snr,
         }
     }
 
+    pub fn buad_length(&self) -> usize {
+        self.transition_convolution_kernels.0.len()
+    }
+
     pub fn transition_convolution_kernel(
-        transition_window_sample_count: SampleCount,
+        transition_window_fft_sample_count: SampleCount,
         transition_proportion: Proportion,
     ) -> (Box<[Amplitude]>, Box<[Amplitude]>, usize) {
         let transition_length = std::cmp::max(
-            (transition_window_sample_count * transition_proportion).value(),
+            (transition_window_fft_sample_count * transition_proportion).value(),
             1usize,
         );
         let plateau_length = std::cmp::max(
@@ -67,19 +95,22 @@ impl Parameters {
             1usize,
         );
 
-        let mut result = Vec::with_capacity(transition_window_sample_count.value());
-        result.resize(transition_window_sample_count.value(), Amplitude::zero());
+        let mut result = Vec::with_capacity(transition_window_fft_sample_count.value());
+        result.resize(
+            transition_window_fft_sample_count.value(),
+            Amplitude::zero(),
+        );
         result[0..plateau_length]
             .iter_mut()
             .for_each(|value| *value = Amplitude::new(1.0));
         result[transition_length - plateau_length..transition_length]
             .iter_mut()
             .for_each(|value| *value = Amplitude::new(-1.0));
-        result[transition_length..transition_window_sample_count.value()]
+        result[transition_length..transition_window_fft_sample_count.value()]
             .iter_mut()
             .for_each(|value| {
                 *value = Amplitude::new(
-                    -1.0 / (transition_window_sample_count.value() - plateau_length) as f32,
+                    -1.0 / (transition_window_fft_sample_count.value() - plateau_length) as f32,
                 )
             });
 
@@ -95,24 +126,58 @@ impl Parameters {
 struct State {
     realtime_backlog: std::sync::Mutex<VecDeque<f32>>,
     backlog: std::sync::Mutex<VecDeque<f32>>,
-    monitor_windows: VecDeque<Amplitude>,
-    signal_to_noise_ratio: Proportion,
+    carrier_amplitudes: VecDeque<Amplitude>,
     transitions: VecDeque<TransitionState>,
     sm: StateMachine,
     fft: FFT,
 }
 
 impl State {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             realtime_backlog: std::sync::Mutex::new(VecDeque::new()),
             backlog: std::sync::Mutex::new(VecDeque::new()),
-            monitor_windows: VecDeque::new(),
-            signal_to_noise_ratio: Proportion::zero(),
+            carrier_amplitudes: VecDeque::new(),
             transitions: VecDeque::new(),
             sm: StateMachine::Searching,
             fft: FFT::new(),
         }
+    }
+
+    fn push_transition(&mut self, ts: TransitionState) -> TransitionState {
+        match self.transitions.back_mut() {
+            Some(last) => last.transition(ts),
+            None => self.transitions.push_back(ts),
+        }
+        *self.transitions.back().unwrap()
+    }
+
+    fn parse_traisition(&mut self, ts: TransitionState) {
+        self.sm = match (self.sm, ts) {
+            (StateMachine::Searching, TransitionState::Rising) => {
+                self.push_transition(TransitionState::Rising);
+                StateMachine::Synchronized
+            },
+            (StateMachine::Searching, TransitionState::Noise(_)) => StateMachine::Searching,
+            (StateMachine::Searching, _) => {
+                panic!("Incorrect internal state... Searching only accepts rising transition")
+            },
+            (StateMachine::Synchronized, change) => match self.push_transition(change) {
+                TransitionState::Noise(_) => StateMachine::Searching,
+                _ => StateMachine::Synchronized,
+            },
+        }
+    }
+
+    fn last_transition(&self) -> TransitionState {
+        match self.transitions.back() {
+            Some(ts) => *ts,
+            _ => TransitionState::Noise(0),
+        }
+    }
+
+    fn drain_carrier_amplitudes(&mut self, amount: usize) {
+        self.carrier_amplitudes.drain(..amount).for_each(|_| {});
     }
 }
 
@@ -120,6 +185,7 @@ struct TransitionSearch {
     convolved: Box<[Amplitude]>,
     median: Amplitude,
     max: Amplitude,
+    signal_beg_offset: usize,
 }
 
 impl TransitionSearch {
@@ -140,6 +206,7 @@ impl TransitionSearch {
             convolved: convolved,
             median: median,
             max: max,
+            signal_beg_offset: signals.len() - res_len,
         }
     }
 
@@ -160,6 +227,10 @@ impl TransitionSearch {
             .unwrap()
             .0
             .clone()
+    }
+
+    pub fn signal_start_idx(&self) -> usize {
+        self.signal_beg_offset + self.max_index()
     }
 }
 
@@ -192,22 +263,73 @@ impl TransitionDecoder {
     pub fn parse(&mut self) {
         match self.m.sm {
             StateMachine::Searching => self.search(),
-            _ => todo!(),
+            StateMachine::Synchronized => self.next_baud(),
         }
     }
 
-    fn search(&mut self) {
-        self.m.monitor_windows.make_contiguous();
+    fn search_transition(
+        &self,
+        rising: TransitionSearch,
+        falling: TransitionSearch,
+    ) -> (TransitionState, usize) {
+        let transition = if rising.snr() > self.c.min_snr {
+            (TransitionState::Rising, Some(rising))
+        } else if falling.snr() > self.c.min_snr {
+            (TransitionState::Falling, Some(falling))
+        } else {
+            (TransitionState::Hold(1), None)
+        };
+
+        match transition {
+            (ts, Some(edge)) => (ts, edge.signal_start_idx()),
+            (ts, None) => (ts, 0),
+        }
+    }
+
+    fn next_baud(&mut self) {
+        self.m.carrier_amplitudes.make_contiguous();
 
         let rising = TransitionSearch::process(
-            self.m.monitor_windows.as_slices().0,
+            &self.m.carrier_amplitudes.as_slices().0[..self.c.buad_length()],
             &self.c.transition_convolution_kernels.0,
         );
 
         let falling = TransitionSearch::process(
-            self.m.monitor_windows.as_slices().0,
+            &self.m.carrier_amplitudes.as_slices().0[..self.c.buad_length()],
             &self.c.transition_convolution_kernels.1,
         );
+
+        let (ts, sync_offset) = self.search_transition(rising, falling);
+
+        self.m
+            .drain_carrier_amplitudes(self.c.buad_length() + sync_offset - 1);
+
+        self.m.parse_traisition(ts);
+
+        self.handle_synchronization();
+    }
+
+    fn handle_synchronization(&mut self) {
+        match self.m.last_transition() {
+            TransitionState::Hold(value) if value >= self.c.max_trainsition_distance => {
+                self.m.parse_traisition(TransitionState::Noise(1));
+            },
+            _ => (),
+        }
+    }
+
+    fn search(&mut self) {
+        self.m.carrier_amplitudes.make_contiguous();
+
+        let rising = TransitionSearch::process(
+            self.m.carrier_amplitudes.as_slices().0,
+            &self.c.transition_convolution_kernels.0,
+        );
+
+        if rising.snr() > self.c.min_snr {
+            self.m.drain_carrier_amplitudes(rising.signal_start_idx());
+            self.m.parse_traisition(TransitionState::Rising);
+        }
     }
 
     pub fn sample_backlog_to_windows(&mut self) {
@@ -219,7 +341,7 @@ impl TransitionDecoder {
             buffer.clear();
             buffer.extend(samples.drain(0..samples_needed));
             let dft = self.m.fft.fft(Samples(&buffer), self.c.sampling_rate);
-            self.m.monitor_windows.push_back(
+            self.m.carrier_amplitudes.push_back(
                 dft.absolute_amplitude_average_at(
                     self.c.carrier_frequency,
                     self.c.carrier_bandwidth,
@@ -339,6 +461,7 @@ mod tests {
             5,
             SamplingRate::new(44100),
             32,
+            Proportion::new(5.0),
         );
 
         assert_eq!(parameters.carrier_frequency, Frequency::new(20000.0));
@@ -346,8 +469,8 @@ mod tests {
         assert_eq!(parameters.sampling_rate, SamplingRate::new(44100));
         assert_eq!(parameters.fft_window_sc, SampleCount::new(13));
         assert_eq!(parameters.max_trainsition_distance, 5);
-        assert_eq!(parameters.transition_convolution_kernels.0.len(), 441);
-        assert_eq!(parameters.transition_convolution_kernels.1.len(), 441);
+        assert_eq!(parameters.transition_convolution_kernels.0.len(), 32);
+        assert_eq!(parameters.transition_convolution_kernels.1.len(), 32);
     }
 
     #[test]
@@ -359,6 +482,7 @@ mod tests {
             5,
             SamplingRate::new(44100),
             32,
+            Proportion::new(5.0),
         );
 
         assert_eq!(parameters.carrier_frequency, Frequency::new(20000.0));
@@ -366,8 +490,8 @@ mod tests {
         assert_eq!(parameters.sampling_rate, SamplingRate::new(44100));
         assert_eq!(parameters.fft_window_sc, SampleCount::new(1));
         assert_eq!(parameters.max_trainsition_distance, 5);
-        assert_eq!(parameters.transition_convolution_kernels.0.len(), 45);
-        assert_eq!(parameters.transition_convolution_kernels.1.len(), 45);
+        assert_eq!(parameters.transition_convolution_kernels.0.len(), 32);
+        assert_eq!(parameters.transition_convolution_kernels.1.len(), 32);
     }
 
     #[test]
