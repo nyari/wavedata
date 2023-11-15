@@ -257,7 +257,7 @@ impl TransitionDecoder {
 
     pub fn process(&mut self) {
         self.dequeue_realtime_samples();
-        self.sample_backlog_to_windows();
+        self.sample_backlog_to_carrier_amplitudes();
     }
 
     pub fn parse(&mut self) {
@@ -332,7 +332,7 @@ impl TransitionDecoder {
         }
     }
 
-    pub fn sample_backlog_to_windows(&mut self) {
+    pub fn sample_backlog_to_carrier_amplitudes(&mut self) {
         let samples_needed = self.c.fft_window_sc.value();
         let mut samples = self.m.backlog.lock().unwrap();
         let mut buffer = Vec::with_capacity(samples_needed);
@@ -525,5 +525,103 @@ mod tests {
         assert_eq!(search.max, Amplitude::new(0.5));
         assert_eq!(search.snr(), Proportion::new(1.0));
         assert_eq!(search.max_index(), 0);
+    }
+}
+
+#[cfg(test)]
+mod integration_test {
+    use crate::{
+        sampling::{Sampleable, SamplesMut},
+        units::Time,
+    };
+
+    use super::*;
+
+    struct Params {
+        lead_in: Time,
+        lead_out: Time,
+        carrier_frequency: Frequency,
+        sampling_rate: SamplingRate,
+        carrier_amplitude: Amplitude,
+        baudrate: Frequency,
+        transition_width: Proportion,
+        high_low: (Amplitude, Amplitude),
+        stuff_bit: u8,
+    }
+
+    impl Params {
+        fn total_samples_count(&self, message_len: usize) -> SampleCount {
+            self.sampling_rate * (self.lead_in + self.lead_out)
+                + (self.sampling_rate * (self.baudrate.cycle_time() * 2.0)) * message_len
+        }
+
+        fn lead_in_sample_count(&self) -> SampleCount {
+            self.sampling_rate * self.lead_in
+        }
+
+        fn create_parameters(&self) -> Parameters {
+            Parameters::new(
+                self.carrier_frequency,
+                self.baudrate,
+                self.transition_width,
+                self.stuff_bit as usize,
+                self.sampling_rate,
+                32,
+                Proportion::new(10.0),
+            )
+        }
+    }
+
+    fn create_signal_with_message(message: &str, p: &Params) -> Vec<f32> {
+        let mut result = Vec::with_capacity(p.total_samples_count(message.len()).value());
+        result.resize(p.total_samples_count(message.len()).value(), 0.0);
+
+        let carrier_signal = crate::sampling::WaveSampler::new(crate::waves::Sine::new(
+            p.carrier_frequency,
+            Time::zero(),
+            p.carrier_amplitude,
+        ));
+        let data_signal = crate::sampling::SignalSampler::new(crate::signals::enc::am::NRZ::new(
+            crate::signals::enc::am::NRZConsts::new(p.baudrate, p.transition_width, p.high_low),
+            crate::encodings::enc::nrz::Parameters::new(
+                message.as_bytes().iter().map(|x| x.clone()).collect(),
+                p.stuff_bit,
+            ),
+        ));
+        let mut composite_sampler =
+            crate::sampling::CompositeSampler::new(carrier_signal, data_signal, |input, output| {
+                *output = input.0 * input.1;
+            });
+
+        composite_sampler.sample_into_f32(
+            SamplesMut(&mut result[p.lead_in_sample_count().value()..]),
+            p.sampling_rate,
+        );
+
+        result
+    }
+
+    #[test]
+    fn integration_test_1() {
+        let p = Params {
+            lead_in: Time::new(1.0),
+            lead_out: Time::new(1.0),
+            carrier_frequency: Frequency::new(20000.0),
+            sampling_rate: SamplingRate::new(44100),
+            carrier_amplitude: Amplitude::new(1.0),
+            baudrate: Frequency::new(100.0),
+            transition_width: Proportion::new(0.25),
+            high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
+            stuff_bit: 4,
+        };
+
+        let input = create_signal_with_message("Hello world", &p);
+        let mut decoder = TransitionDecoder::new(p.create_parameters());
+
+        decoder.append_samples(Samples(input.as_slice()));
+        decoder.process();
+        decoder.parse();
+
+        assert_ne!(decoder.m.transitions.len(), 0);
     }
 }

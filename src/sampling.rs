@@ -23,6 +23,13 @@ impl SampleCount {
     }
 }
 
+impl std::ops::Add<SampleCount> for SampleCount {
+    type Output = Self;
+    fn add(self, rhs: SampleCount) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
 impl std::ops::Div<SamplingRate> for SampleCount {
     type Output = Time;
     fn div(self, rhs: SamplingRate) -> Self::Output {
