@@ -33,7 +33,7 @@ impl std::ops::Add<SampleCount> for SampleCount {
 impl std::ops::Div<SamplingRate> for SampleCount {
     type Output = Time;
     fn div(self, rhs: SamplingRate) -> Self::Output {
-        Time::new((self.0 / rhs.0) as f32)
+        Time::new((self.0 as f32 / rhs.0 as f32) as f32)
     }
 }
 

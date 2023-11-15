@@ -566,7 +566,7 @@ mod integration_test {
                 self.transition_width,
                 self.stuff_bit as usize,
                 self.sampling_rate,
-                32,
+                8,
                 Proportion::new(10.0),
             )
         }
