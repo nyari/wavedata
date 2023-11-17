@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     sampling::{SampleCount, Samples, SamplingRate},
-    signals::proc::{dft, FFT},
+    signals::proc::FFT,
     units::{Amplitude, Frequency, Proportion, RationalFraction},
     utils,
 };
@@ -40,7 +40,6 @@ enum StateMachine {
 
 pub struct Parameters {
     carrier_frequency: Frequency,
-    carrier_bandwidth: Frequency,
     sampling_rate: SamplingRate,
     fft_window_sc: SampleCount,
     max_trainsition_distance: usize,
@@ -63,10 +62,6 @@ impl Parameters {
         let fft_window_sc = transition_window_sample_count / transition_window_movement_divisor;
         Self {
             carrier_frequency: carrier_frequency,
-            carrier_bandwidth: dft::step(
-                transition_window_sample_count,
-                sampling_rate.max_frequency(),
-            ),
             sampling_rate: sampling_rate,
             fft_window_sc: fft_window_sc,
             max_trainsition_distance: max_trainsition_distance,
@@ -193,17 +188,16 @@ impl TransitionSearch {
         let res_len = utils::conv1d::valid_result_length(signals.len(), kernel.len());
         let mut res = Vec::with_capacity(res_len);
         res.resize(res_len, Amplitude::zero());
-        let mut convolved = res.into_boxed_slice();
-        utils::conv1d::valid(signals, kernel, &mut convolved).unwrap();
+        utils::conv1d::valid(signals, kernel, &mut res).unwrap();
 
-        let median = utils::median_non_averaged(&convolved).unwrap_or(Amplitude::zero());
-        let max = *convolved
+        let median = utils::median_non_averaged(&res).unwrap_or(Amplitude::zero());
+        let max = *res
             .iter()
             .max_by(|lhs, rhs| lhs.partial_cmp(rhs).unwrap())
             .unwrap_or(&Amplitude::zero());
 
         Self {
-            convolved: convolved,
+            convolved: res.into_boxed_slice(),
             median: median,
             max: max,
             signal_beg_offset: signals.len() - res_len,
@@ -223,7 +217,7 @@ impl TransitionSearch {
         self.convolved
             .iter()
             .enumerate()
-            .find(|(idx, item)| item >= &&self.max)
+            .find(|(_, item)| item >= &&self.max)
             .unwrap()
             .0
             .clone()
@@ -342,11 +336,8 @@ impl TransitionDecoder {
             buffer.extend(samples.drain(0..samples_needed));
             let dft = self.m.fft.fft(Samples(&buffer), self.c.sampling_rate);
             self.m.carrier_amplitudes.push_back(
-                dft.absolute_amplitude_average_at(
-                    self.c.carrier_frequency,
-                    self.c.carrier_bandwidth,
-                )
-                .unwrap(),
+                dft.absolute_amplitude_average_bwsteps_at(self.c.carrier_frequency, 0)
+                    .unwrap(),
             )
         }
     }
@@ -460,17 +451,16 @@ mod tests {
             Proportion::new(0.25),
             5,
             SamplingRate::new(44100),
-            32,
+            8,
             Proportion::new(5.0),
         );
 
         assert_eq!(parameters.carrier_frequency, Frequency::new(20000.0));
-        assert_eq!(parameters.carrier_bandwidth, Frequency::new(25.0));
         assert_eq!(parameters.sampling_rate, SamplingRate::new(44100));
         assert_eq!(parameters.fft_window_sc, SampleCount::new(13));
         assert_eq!(parameters.max_trainsition_distance, 5);
-        assert_eq!(parameters.transition_convolution_kernels.0.len(), 32);
-        assert_eq!(parameters.transition_convolution_kernels.1.len(), 32);
+        assert_eq!(parameters.transition_convolution_kernels.0.len(), 8);
+        assert_eq!(parameters.transition_convolution_kernels.1.len(), 8);
     }
 
     #[test]
@@ -486,7 +476,6 @@ mod tests {
         );
 
         assert_eq!(parameters.carrier_frequency, Frequency::new(20000.0));
-        assert_eq!(parameters.carrier_bandwidth, Frequency::new(245.0));
         assert_eq!(parameters.sampling_rate, SamplingRate::new(44100));
         assert_eq!(parameters.fft_window_sc, SampleCount::new(1));
         assert_eq!(parameters.max_trainsition_distance, 5);
@@ -552,7 +541,7 @@ mod integration_test {
     impl Params {
         fn total_samples_count(&self, message_len: usize) -> SampleCount {
             self.sampling_rate * (self.lead_in + self.lead_out)
-                + (self.sampling_rate * (self.baudrate.cycle_time() * 2.0)) * message_len
+                + (self.sampling_rate * (self.baudrate.cycle_time().mul(2.0))) * message_len
         }
 
         fn lead_in_sample_count(&self) -> SampleCount {
@@ -610,7 +599,7 @@ mod integration_test {
             sampling_rate: SamplingRate::new(44100),
             carrier_amplitude: Amplitude::new(1.0),
             baudrate: Frequency::new(100.0),
-            transition_width: Proportion::new(0.25),
+            transition_width: Proportion::new(0.5),
             high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
             stuff_bit: 4,
         };

@@ -31,12 +31,12 @@ impl Wave for Sine {
         let new_phase_offset_base = self.phase_offset + offset;
         let cycle_time = self.freq.cycle_time();
         let whole_phases = (new_phase_offset_base / cycle_time).floor();
-        self.phase_offset = new_phase_offset_base - (cycle_time * whole_phases);
+        self.phase_offset = new_phase_offset_base - (cycle_time.mul(whole_phases));
     }
 
     fn value_at(&self, t: Time) -> Amplitude {
         let offset_t = self.phase_offset + t;
-        let apply_pi = offset_t * 2.0f32 * std::f32::consts::PI;
+        let apply_pi = offset_t.mul(2.0f32 * std::f32::consts::PI);
         let apply_frequency = apply_pi * self.freq;
         Amplitude::new(apply_frequency.sin() * self.amplitude.value())
     }

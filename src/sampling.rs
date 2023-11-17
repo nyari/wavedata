@@ -123,7 +123,7 @@ impl<T: crate::waves::Wave> Sampleable for WaveSampler<T> {
         let increment = rate.increment();
 
         for (sample_idx, sample_value) in out.0.iter_mut().enumerate() {
-            let amplitude = self.0.value_at(increment * (sample_idx as f32));
+            let amplitude = self.0.value_at(increment.mul(sample_idx as f32));
             *sample_value = amplitude.value();
         }
 

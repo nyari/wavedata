@@ -17,6 +17,9 @@ impl Time {
     pub fn frequency(self) -> Frequency {
         Frequency(self.0.recip())
     }
+    pub fn mul(self, value: f32) -> Time {
+        Time(self.0 * value)
+    }
 }
 
 impl std::ops::Add for Time {
@@ -63,16 +66,13 @@ impl std::ops::Mul<Frequency> for Time {
     }
 }
 
-impl<T> std::ops::Mul<T> for Time
-where
-    T: std::ops::Mul<f32, Output = f32>,
-{
+impl std::ops::Mul<Proportion> for Time {
     type Output = Time;
-
-    fn mul(self, rhs: T) -> Self::Output {
-        Self(rhs * self.0)
+    fn mul(self, rhs: Proportion) -> Self::Output {
+        Self(self.0 * rhs.value())
     }
 }
+
 /// Frequency of a signal in terms of 1/s a.k.a Hz
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub struct Frequency(f32);
@@ -103,25 +103,6 @@ impl std::ops::Div<SampleCount> for Frequency {
     }
 }
 
-impl<T> std::ops::Mul<T> for Frequency
-where
-    T: std::ops::Mul<f32, Output = f32>,
-{
-    type Output = Frequency;
-    fn mul(self, rhs: T) -> Self::Output {
-        Self(rhs * self.0)
-    }
-}
-
-impl<T> std::ops::Div<T> for Frequency
-where
-    T: std::ops::Div<f32, Output = f32>,
-{
-    type Output = Frequency;
-    fn div(self, rhs: T) -> Self::Output {
-        Self(rhs / self.0)
-    }
-}
 /// Maximum amplitude of a signal
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub struct Amplitude(f32);
@@ -138,6 +119,12 @@ impl Amplitude {
     }
     pub fn relative_to(self, rhs: Self) -> Proportion {
         Proportion(self.0 / rhs.0)
+    }
+    pub fn mul(self, value: f32) -> Amplitude {
+        Amplitude(self.0 * value)
+    }
+    pub fn div(self, value: f32) -> Amplitude {
+        Amplitude(self.0 / value)
     }
 }
 
@@ -172,25 +159,6 @@ impl std::ops::Sub for Amplitude {
     }
 }
 
-impl<T> std::ops::Mul<T> for Amplitude
-where
-    T: std::ops::Mul<f32, Output = f32>,
-{
-    type Output = Amplitude;
-    fn mul(self, rhs: T) -> Self::Output {
-        Self(rhs * self.0)
-    }
-}
-
-impl<T> std::ops::Div<T> for Amplitude
-where
-    T: std::ops::Div<f32, Output = f32>,
-{
-    type Output = Amplitude;
-    fn div(self, rhs: T) -> Self::Output {
-        Self(rhs / self.0)
-    }
-}
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub struct Proportion(f32);
 

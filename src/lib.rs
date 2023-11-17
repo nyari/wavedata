@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub use num;
 pub use rustfft as rfft;
 

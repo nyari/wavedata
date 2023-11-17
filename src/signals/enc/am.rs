@@ -19,7 +19,7 @@ impl NRZConsts {
     ) -> Self {
         Self {
             baud_length: baudrate.cycle_time(),
-            transition_width: baudrate.cycle_time() * transition_width.value(),
+            transition_width: baudrate.cycle_time() * transition_width,
             highlow: highlow,
         }
     }
@@ -77,7 +77,7 @@ impl NRZ {
             self.level_to_amplitude(self.m.current_level.neg()),
         );
         let delta = to - from;
-        from + (delta * progress)
+        from + (delta.mul(progress))
     }
 
     fn advance(&mut self, dt: Time) -> Result<(), crate::signals::Error> {

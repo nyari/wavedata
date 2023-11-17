@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 pub mod conv1d {
     #[derive(Debug)]
     pub enum Error {
@@ -230,11 +228,12 @@ impl BitVec {
         Self(Vec::new(), 0)
     }
 
-    pub fn push(&mut self, value: bool) {
+    pub fn push(&mut self, _: bool) {
         let blen = self.blen().offset(1);
         self.0.resize(blen.0, 0u8);
         self.1 = blen.1;
-        self.0[blen.0] = Self::set_bit(self.0[blen.0].clone(), blen.1)
+        self.0[blen.0] = Self::set_bit(self.0[blen.0].clone(), blen.1);
+        todo!();
     }
 
     pub fn len(&self) -> usize {
