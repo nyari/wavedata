@@ -148,6 +148,27 @@ where
     }
 }
 
+pub fn nms<T>(input: &[T]) -> bool
+where
+    T: PartialOrd + Clone,
+{
+    let halfpoint = input.len() / 2;
+    let init = input[0].clone();
+    input
+        .iter()
+        .skip(1)
+        .enumerate()
+        .fold((true, init), |(acc, last), (idx, item)| {
+            let current = if idx < halfpoint {
+                last.partial_cmp(item).unwrap().is_le()
+            } else {
+                last.partial_cmp(item).unwrap().is_ge()
+            };
+            (acc && current, item.clone())
+        })
+        .0
+}
+
 pub struct WindowedWeightedAverage<T> {
     value: T,
     internal_weight: T,

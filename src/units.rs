@@ -1,3 +1,5 @@
+use num::Zero;
+
 use crate::sampling::SampleCount;
 
 /// Time offset of a signal in terms of seconds
@@ -118,13 +120,17 @@ impl Amplitude {
         Self(0.0)
     }
     pub fn relative_to(self, rhs: Self) -> Proportion {
-        Proportion(self.0 / rhs.0)
+        let denominator = if rhs.0.is_zero() { f32::EPSILON } else { rhs.0 };
+        Proportion(self.0 / denominator)
     }
     pub fn mul(self, value: f32) -> Amplitude {
         Amplitude(self.0 * value)
     }
     pub fn div(self, value: f32) -> Amplitude {
         Amplitude(self.0 / value)
+    }
+    pub fn abs(self) -> Amplitude {
+        Amplitude(self.0.abs())
     }
 }
 
@@ -172,6 +178,9 @@ impl Proportion {
     pub fn zero() -> Self {
         Self(0.0f32)
     }
+    pub fn scale_usize(self, rhs: usize) -> usize {
+        (self.0 * (rhs as f32)) as usize
+    }
 }
 trait Clampable<T> {
     fn clamp(self, lower: T, higher: T) -> T;
@@ -180,30 +189,5 @@ trait Clampable<T> {
 impl Clampable<f32> for f32 {
     fn clamp(self, lower: f32, higher: f32) -> f32 {
         self.max(lower).min(higher)
-    }
-}
-
-pub struct RationalFraction<T>(T, T);
-
-impl<T> RationalFraction<T>
-where
-    T: std::ops::Mul<T, Output = T> + std::ops::Div<T, Output = T>,
-{
-    pub fn new(numerator: T, denominator: T) -> Self {
-        RationalFraction(numerator, denominator)
-    }
-
-    pub fn recip(self) -> Self {
-        RationalFraction(self.1, self.0)
-    }
-}
-
-impl<T> std::ops::Mul<T> for RationalFraction<T>
-where
-    T: std::ops::Mul<T, Output = T> + std::ops::Div<T, Output = T>,
-{
-    type Output = T;
-    fn mul(self, rhs: T) -> Self::Output {
-        (rhs * self.0) / self.1
     }
 }
