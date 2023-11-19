@@ -169,6 +169,11 @@ where
         .0
 }
 
+pub fn begin_upper_limit_slice<'a, T>(input: &'a [T], size: usize) -> &'a [T] {
+    let len = input.len();
+    &input[..std::cmp::min(size, len)]
+}
+
 pub struct WindowedWeightedAverage<T> {
     value: T,
     internal_weight: T,

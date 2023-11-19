@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ops::Div};
+use std::collections::VecDeque;
 
 use crate::{
     sampling::{SampleCount, Samples, SamplingRate},
@@ -12,28 +12,12 @@ enum Error {
     IncorrectTransition,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionState {
     Hold(usize),
     Rising,
     Falling,
     Noise(usize),
-}
-
-impl TransitionState {
-    pub fn transition_mut(&mut self, ts: Self) {
-        *self = self.clone().transition(ts)
-    }
-
-    pub fn transition(self, ts: Self) -> Self {
-        match (self, ts) {
-            (Self::Rising, Self::Rising) => Self::Noise(0),
-            (Self::Falling, Self::Falling) => Self::Noise(0),
-            (Self::Noise(pre), Self::Noise(add)) => Self::Noise(pre + add),
-            (Self::Hold(pre), Self::Hold(add)) => Self::Hold(pre + add),
-            _ => ts,
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -43,25 +27,25 @@ enum StateMachine {
 }
 
 struct TransitionSearchParams {
-    transition_width: SampleCount,
-    window_width: SampleCount,
+    transition_width: usize,
+    half_window_width: usize,
+    window_width: usize,
+    monitor_width: usize,
     kernel: Box<[Amplitude]>,
     min_snr: Proportion,
 }
 
 impl TransitionSearchParams {
-    pub fn create(
-        transition_width: SampleCount,
-        window_width: SampleCount,
-        min_snr: Proportion,
-    ) -> Self {
-        let mut kernel = Vec::with_capacity(transition_width.value());
-        kernel.resize(transition_width.value(), Amplitude::zero());
+    pub fn create(transition_width: usize, window_width: usize, min_snr: Proportion) -> Self {
+        let mut kernel = Vec::with_capacity(transition_width);
+        kernel.resize(transition_width, Amplitude::zero());
         kernel[0] = Amplitude::new(-1.0);
-        kernel[transition_width.value() - 1] = Amplitude::new(1.0);
+        kernel[transition_width - 1] = Amplitude::new(1.0);
         Self {
             transition_width,
+            half_window_width: window_width / 2,
             window_width,
+            monitor_width: window_width * 2,
             kernel: kernel.into_boxed_slice(),
             min_snr,
         }
@@ -79,7 +63,6 @@ struct TransitionSearch {
 impl TransitionSearch {
     pub fn search(p: &TransitionSearchParams, signals: &[Amplitude]) -> Option<Self> {
         let conv_res_length = utils::conv1d::valid_result_length(signals.len(), p.kernel.len());
-        let half_transition = p.transition_width.div(2).value();
         let conv = {
             let mut res = Vec::new();
             res.resize(conv_res_length, Amplitude::zero());
@@ -119,8 +102,8 @@ impl TransitionSearch {
                 snr,
                 ts,
                 sig_begin_offset,
-                mid_transition_window_offset: sig_begin_offset + p.window_width.div(2).value(),
-                transitionless_windows: sig_begin_offset / p.window_width.value(),
+                mid_transition_window_offset: sig_begin_offset + p.half_window_width,
+                transitionless_windows: sig_begin_offset / p.window_width,
             })
         } else {
             None
@@ -155,10 +138,8 @@ impl Parameters {
             fft_window_sc: fft_window_sc,
             max_transitionless_windows: max_transitionless_windows,
             transiton_searc_params: TransitionSearchParams::create(
-                SampleCount::new(
-                    transition_width_proportion.scale_usize(transition_window_movement_divisor),
-                ),
-                SampleCount::new(transition_window_movement_divisor),
+                transition_width_proportion.scale_usize(transition_window_movement_divisor),
+                transition_window_movement_divisor,
                 min_snr,
             ),
         }
@@ -193,14 +174,18 @@ impl State {
     }
 
     fn push_transition(&mut self, ts: TransitionState) -> TransitionState {
-        let decision = match self.transitions.back() {
-            Some(last) => match last.clone().transition(ts) {
-                TransitionState::Hold(0) => PushOp::Skip,
-                TransitionState::Hold(v) => PushOp::Mutate(TransitionState::Hold(v)),
-                TransitionState::Noise(v) => PushOp::Mutate(TransitionState::Noise(v)),
-                next => PushOp::Push(next),
+        let decision = match (self.transitions.back(), ts) {
+            (_, TransitionState::Noise(0)) => PushOp::Skip,
+            (_, TransitionState::Hold(0)) => PushOp::Skip,
+            (None, ts) => PushOp::Push(ts),
+            (Some(TransitionState::Noise(pre)), TransitionState::Noise(post)) => {
+                PushOp::Mutate(TransitionState::Noise(pre + post))
             },
-            None => PushOp::Push(TransitionState::Noise(0).transition(ts)),
+            (Some(TransitionState::Hold(pre)), TransitionState::Hold(post)) => {
+                PushOp::Mutate(TransitionState::Hold(pre + post))
+            },
+            (Some(a), b) if *a == b => PushOp::Push(TransitionState::Noise(1)),
+            _ => PushOp::Push(ts),
         };
 
         match decision {
@@ -268,7 +253,7 @@ impl TransitionDecoder {
     }
 
     pub fn parse(&mut self) {
-        while self.m.carrier_amplitudes.len() > self.c.transiton_searc_params.window_width.value() {
+        while self.m.carrier_amplitudes.len() > self.c.transiton_searc_params.window_width {
             match self.m.sm {
                 StateMachine::Searching => self.search(),
                 StateMachine::Synchronized => self.next_baud(),
@@ -278,12 +263,15 @@ impl TransitionDecoder {
 
     fn next_baud(&mut self) {
         self.m.carrier_amplitudes.make_contiguous();
-        let hold_window =
-            self.c.transiton_searc_params.window_width.value() * self.c.max_transitionless_windows;
+        let hold_window_size =
+            self.c.transiton_searc_params.window_width * (self.c.max_transitionless_windows + 1);
 
-        let baud = &self.m.carrier_amplitudes.as_slices().0[..hold_window];
+        let hold_window = utils::begin_upper_limit_slice(
+            self.m.carrier_amplitudes.as_slices().0,
+            hold_window_size,
+        );
 
-        match TransitionSearch::search(&self.c.transiton_searc_params, baud) {
+        match TransitionSearch::search(&self.c.transiton_searc_params, hold_window) {
             Some(ts) => {
                 self.m
                     .parse_traisition(TransitionState::Hold(ts.transitionless_windows));
@@ -292,20 +280,10 @@ impl TransitionDecoder {
                     .drain_carrier_amplitudes(ts.mid_transition_window_offset);
             },
             None => {
-                self.m.parse_traisition(TransitionState::Noise(1));
-                self.m.drain_carrier_amplitudes(hold_window)
+                if hold_window.len() >= hold_window_size {
+                    self.m.parse_traisition(TransitionState::Noise(1))
+                }
             },
-        }
-
-        self.handle_synchronization()
-    }
-
-    fn handle_synchronization(&mut self) {
-        match self.m.last_transition() {
-            TransitionState::Hold(value) if value >= self.c.max_transitionless_windows => {
-                self.m.parse_traisition(TransitionState::Noise(1));
-            },
-            _ => (),
         }
     }
 
@@ -325,7 +303,7 @@ impl TransitionDecoder {
             None => {
                 self.m.drain_carrier_amplitudes(
                     self.m.carrier_amplitudes.len()
-                        - self.c.transiton_searc_params.window_width.div(2).value(),
+                        - self.c.transiton_searc_params.half_window_width,
                 );
             },
         }
@@ -481,8 +459,8 @@ mod integration_test {
     #[test]
     fn integration_test_1() {
         let p = Params {
-            lead_in: Time::new(1.0),
-            lead_out: Time::new(1.0),
+            lead_in: Time::new(0.5),
+            lead_out: Time::new(0.5),
             carrier_frequency: Frequency::new(20000.0),
             sampling_rate: SamplingRate::new(44100),
             carrier_amplitude: Amplitude::new(1.0),
@@ -492,7 +470,7 @@ mod integration_test {
             stuff_bit: 4,
         };
 
-        let input = create_signal_with_message("Hello world", &p);
+        let input = create_signal_with_message("ABCD", &p);
         let mut decoder = TransitionDecoder::new(p.create_parameters());
 
         decoder.append_samples(Samples(input.as_slice()));
