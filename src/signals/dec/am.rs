@@ -478,5 +478,7 @@ mod integration_test {
         decoder.parse();
 
         assert_ne!(decoder.m.transitions.len(), 0);
+
+        println!("{:?}", decoder.m.transitions);
     }
 }
