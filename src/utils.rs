@@ -154,19 +154,32 @@ where
 {
     let halfpoint = input.len() / 2;
     let init = input[0].clone();
-    input
+    let a = input
         .iter()
         .skip(1)
         .enumerate()
-        .fold((true, init), |(acc, last), (idx, item)| {
-            let current = if idx < halfpoint {
-                last.partial_cmp(item).unwrap().is_le()
-            } else {
-                last.partial_cmp(item).unwrap().is_ge()
-            };
-            (acc && current, item.clone())
-        })
-        .0
+        .fold(
+            ((true, true, true), init),
+            |((begin, mid, end), last), (idx, item)| {
+                let begin_current = last.partial_cmp(item).unwrap().is_ge();
+                let end_current = last.partial_cmp(item).unwrap().is_le();
+                let mid_current = if idx < halfpoint {
+                    last.partial_cmp(item).unwrap().is_le()
+                } else {
+                    last.partial_cmp(item).unwrap().is_ge()
+                };
+                (
+                    (
+                        begin && begin_current,
+                        mid && mid_current,
+                        end && end_current,
+                    ),
+                    item.clone(),
+                )
+            },
+        )
+        .0;
+    a.0 || a.1 || a.2
 }
 
 pub fn begin_upper_limit_slice<'a, T>(input: &'a [T], size: usize) -> &'a [T] {
