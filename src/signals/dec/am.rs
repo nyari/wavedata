@@ -80,31 +80,33 @@ impl TransitionSearch {
         let snr = max.relative_to(median);
 
         if snr >= p.min_snr {
-            let (idx, _) = abs_conv
+            if let Some((idx, _)) = abs_conv
                 .windows(3)
                 .enumerate()
                 .find(|(_, win)| win[1].abs().relative_to(median) > p.min_snr && utils::nms(win))
-                .unwrap();
-
-            let ts = if conv[idx + 1]
-                .partial_cmp(&Amplitude::zero())
-                .unwrap()
-                .is_gt()
             {
-                TransitionState::Rising
+                let ts = if conv[idx + 1]
+                    .partial_cmp(&Amplitude::zero())
+                    .unwrap()
+                    .is_gt()
+                {
+                    TransitionState::Rising
+                } else {
+                    TransitionState::Falling
+                };
+
+                let sig_begin_offset = idx + 1;
+
+                Some(Self {
+                    snr,
+                    ts,
+                    sig_begin_offset,
+                    mid_transition_window_offset: sig_begin_offset + p.half_window_width,
+                    transitionless_windows: sig_begin_offset / p.window_width,
+                })
             } else {
-                TransitionState::Falling
-            };
-
-            let sig_begin_offset = idx + 1;
-
-            Some(Self {
-                snr,
-                ts,
-                sig_begin_offset,
-                mid_transition_window_offset: sig_begin_offset + p.half_window_width,
-                transitionless_windows: sig_begin_offset / p.window_width,
-            })
+                None
+            }
         } else {
             None
         }

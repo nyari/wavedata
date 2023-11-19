@@ -114,7 +114,9 @@ impl FFT {
         let (mut output, mut scratch) = {
             let mut buffer = Vec::new();
             buffer.resize(s.0.len(), Complex::zero());
-            (buffer.clone(), buffer)
+            let output = buffer.clone();
+            buffer.resize(fft.get_outofplace_scratch_len(), Complex::zero());
+            (output, buffer)
         };
         fft.process_outofplace_with_scratch(
             input.as_mut_slice(),
