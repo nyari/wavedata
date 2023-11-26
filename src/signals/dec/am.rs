@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::{
+    encodings::nrzi::Value,
     sampling::{SampleCount, Samples, SamplingRate},
     signals::{proc::FFT, TransitionState},
     units::{Amplitude, Frequency, Proportion},
@@ -8,8 +9,11 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy)]
-enum Error {
+pub enum Error {
     IncorrectTransition,
+    IncompleteFrame,
+    IncorrectStartOfFrame,
+    IncorrectBitStuffingInTransitions,
 }
 
 #[derive(Clone, Copy)]
@@ -369,6 +373,79 @@ impl TransitionDecoder {
 
         let samples_to_take = (source.len() / samples_needed) * samples_needed;
         target.extend(source.drain(0..samples_to_take));
+    }
+}
+
+#[derive(Debug, Clone)]
+enum NRZIState {
+    Begin,
+    Bit(usize),
+    Done(usize),
+}
+
+pub struct NRZIFrame {
+    payload: Vec<Value>,
+    frame_offset: usize,
+}
+
+pub struct NRZI {
+    stuff_bit_after: usize,
+    payload: Vec<Value>,
+    frame_offset: usize,
+}
+
+impl NRZI {
+    pub fn parse(frame: &[TransitionState], bit_stuffing: usize) -> Result<Self, Error> {
+        let mut result = Vec::new();
+        let mut sm = NRZIState::Begin;
+
+        for (idx, ts) in frame.iter().enumerate() {
+            sm = match (sm.clone(), ts) {
+                (NRZIState::Begin, TransitionState::Noise(_)) => Ok(NRZIState::Begin),
+                (NRZIState::Begin, TransitionState::Rising) => Ok(NRZIState::Bit(0)),
+                (NRZIState::Begin, _) => Err(Error::IncorrectStartOfFrame),
+                (NRZIState::Bit(hold_count), TransitionState::Hold(hold_length)) => {
+                    if *hold_length + hold_count <= bit_stuffing {
+                        for _ in 0..*hold_length {
+                            result.push(Value::Bit(false));
+                        }
+                        Ok(NRZIState::Bit(hold_count + hold_length))
+                    } else {
+                        Err(Error::IncorrectBitStuffingInTransitions)
+                    }
+                },
+                (NRZIState::Bit(hold_count), TransitionState::Noise(_)) => {
+                    if hold_count >= bit_stuffing {
+                        let bits_count = result.len();
+                        let byte_count = bits_count / 8;
+                        let byte_bit_count = byte_count * 8;
+                        let remaining_bits = result.len() % 8;
+                        if remaining_bits < bit_stuffing {
+                            result.drain(byte_bit_count..result.len()).for_each(|_| {});
+                        }
+                    }
+
+                    Ok(NRZIState::Done(idx + 1))
+                },
+                (NRZIState::Bit(hold_count), _) => {
+                    if hold_count < bit_stuffing {
+                        result.push(Value::Bit(true));
+                    }
+                    Ok(NRZIState::Bit(0))
+                },
+                (NRZIState::Done(_), _) => break,
+            }?;
+        }
+
+        if let NRZIState::Done(frame_offset) = sm {
+            Ok(Self {
+                stuff_bit_after: bit_stuffing,
+                payload: result,
+                frame_offset,
+            })
+        } else {
+            panic!("Internal error")
+        }
     }
 }
 

@@ -1,12 +1,5 @@
 pub mod nrzi {
-    #[derive(Debug, PartialEq)]
-    pub enum Value {
-        StartOfFrame,
-        Bit(bool),
-        EndOfFrame(u8),
-        StuffBit,
-        Complete,
-    }
+    use crate::encodings::nrzi::Value;
 
     #[derive(Clone, Copy)]
     enum StateMachine {

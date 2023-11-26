@@ -1,5 +1,6 @@
 use num::Zero;
 
+use crate::encodings::nrzi::Value;
 use crate::encodings::{self};
 use crate::units::{Amplitude, Frequency, Proportion, Time};
 
@@ -96,7 +97,7 @@ impl NRZI {
             self.m.nrzi.advance();
         }
 
-        if let encodings::enc::nrzi::Value::Complete = self.m.nrzi.current() {
+        if let Value::Complete = self.m.nrzi.current() {
             Err(crate::signals::Error::Finished)
         } else {
             Ok(())
@@ -105,17 +106,13 @@ impl NRZI {
 
     fn transition(&self) -> bool {
         match self.m.nrzi.current() {
-            encodings::enc::nrzi::Value::StartOfFrame
-            | encodings::enc::nrzi::Value::StuffBit
-            | encodings::enc::nrzi::Value::Bit(true) => true,
-            encodings::enc::nrzi::Value::EndOfFrame(eofidx) => {
-                match (self.m.current_level, eofidx) {
-                    (BinaryLevel::Low, 0) => true,
-                    (BinaryLevel::Low, _) => false,
-                    (BinaryLevel::High, 0) => true,
-                    (BinaryLevel::High, 1) => true,
-                    (BinaryLevel::High, _) => false,
-                }
+            Value::StartOfFrame | Value::StuffBit | Value::Bit(true) => true,
+            Value::EndOfFrame(eofidx) => match (self.m.current_level, eofidx) {
+                (BinaryLevel::Low, 0) => true,
+                (BinaryLevel::Low, _) => false,
+                (BinaryLevel::High, 0) => true,
+                (BinaryLevel::High, 1) => true,
+                (BinaryLevel::High, _) => false,
             },
             _ => false,
         }
