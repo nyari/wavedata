@@ -311,9 +311,13 @@ impl TransitionDecoder {
             Some(self.m.noise_level.value().clone()),
         ) {
             Some(ts) => {
-                self.m
-                    .parse_traisition(TransitionState::Hold(ts.transitionless_windows));
-                self.m.parse_traisition(ts.ts);
+                if ts.transitionless_windows <= self.c.max_transitionless_windows {
+                    self.m
+                        .parse_traisition(TransitionState::Hold(ts.transitionless_windows));
+                    self.m.parse_traisition(ts.ts);
+                } else {
+                    self.m.parse_traisition(TransitionState::Noise(1));
+                }
                 self.m
                     .drain_carrier_amplitudes(ts.mid_transition_window_offset);
                 self.m
