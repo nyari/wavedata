@@ -526,8 +526,35 @@ mod integration_test {
         decoder.process();
         decoder.parse();
 
-        assert_ne!(decoder.m.transitions.len(), 0);
-
-        println!("{:?}", decoder.m.transitions);
+        assert_eq!(
+            &decoder.m.transitions.as_slices().0,
+            &[
+                TransitionState::Rising,
+                TransitionState::Hold(1),
+                TransitionState::Falling,
+                TransitionState::Hold(4),
+                TransitionState::Rising,
+                TransitionState::Hold(1),
+                TransitionState::Falling,
+                TransitionState::Hold(1),
+                TransitionState::Rising,
+                TransitionState::Hold(4),
+                TransitionState::Falling,
+                TransitionState::Rising,
+                TransitionState::Hold(2),
+                TransitionState::Falling,
+                TransitionState::Hold(4),
+                TransitionState::Rising,
+                TransitionState::Falling,
+                TransitionState::Rising,
+                TransitionState::Hold(1),
+                TransitionState::Falling,
+                TransitionState::Hold(3),
+                TransitionState::Rising,
+                TransitionState::Hold(2),
+                TransitionState::Falling,
+                TransitionState::Noise(1)
+            ]
+        );
     }
 }
