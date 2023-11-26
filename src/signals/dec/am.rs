@@ -475,9 +475,9 @@ mod integration_test {
             Time::zero(),
             p.carrier_amplitude,
         ));
-        let data_signal = crate::sampling::SignalSampler::new(crate::signals::enc::am::NRZ::new(
-            crate::signals::enc::am::NRZConsts::new(p.baudrate, p.transition_width, p.high_low),
-            crate::encodings::enc::nrz::Parameters::new(
+        let data_signal = crate::sampling::SignalSampler::new(crate::signals::enc::am::NRZI::new(
+            crate::signals::enc::am::NRZIConsts::new(p.baudrate, p.transition_width, p.high_low),
+            crate::encodings::enc::nrzi::Parameters::new(
                 message.as_bytes().iter().map(|x| x.clone()).collect(),
                 p.stuff_bit,
             ),

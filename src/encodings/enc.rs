@@ -1,4 +1,4 @@
-pub mod nrz {
+pub mod nrzi {
     #[derive(Debug, PartialEq)]
     pub enum Value {
         StartOfFrame,
@@ -48,12 +48,12 @@ pub mod nrz {
         }
     }
 
-    pub struct NRZ {
+    pub struct NRZI {
         c: Parameters,
         m: State,
     }
 
-    impl NRZ {
+    impl NRZI {
         pub fn new(c: Parameters) -> Self {
             Self {
                 c: c,
@@ -136,7 +136,7 @@ pub mod nrz {
         }
     }
 
-    impl Iterator for NRZ {
+    impl Iterator for NRZI {
         type Item = Value;
 
         fn next(&mut self) -> Option<Self::Item> {
@@ -155,12 +155,12 @@ pub mod nrz {
 
         #[test]
         fn null_byte_without_bit_stuffing() {
-            let nrz = NRZ::new(Parameters {
+            let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_0000_0000],
                 stuff_bit_after: 9,
             });
             assert_eq!(
-                nrz.collect::<Vec<Value>>(),
+                nrzi.collect::<Vec<Value>>(),
                 vec![
                     Value::StartOfFrame,
                     Value::Bit(false),
@@ -187,12 +187,12 @@ pub mod nrz {
         }
         #[test]
         fn null_byte_with_symmetric_bit_stuffing() {
-            let nrz = NRZ::new(Parameters {
+            let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_0000_0000],
                 stuff_bit_after: 4,
             });
             assert_eq!(
-                nrz.collect::<Vec<Value>>(),
+                nrzi.collect::<Vec<Value>>(),
                 vec![
                     Value::StartOfFrame,
                     Value::Bit(false),
@@ -216,12 +216,12 @@ pub mod nrz {
 
         #[test]
         fn null_byte_with_assymetric_bit_stuffing() {
-            let nrz = NRZ::new(Parameters {
+            let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_0000_0000],
                 stuff_bit_after: 5,
             });
             assert_eq!(
-                nrz.collect::<Vec<Value>>(),
+                nrzi.collect::<Vec<Value>>(),
                 vec![
                     Value::StartOfFrame,
                     Value::Bit(false),
@@ -246,12 +246,12 @@ pub mod nrz {
 
         #[test]
         fn byte_without_bit_stuffing_needed() {
-            let nrz = NRZ::new(Parameters {
+            let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_1001_1000],
                 stuff_bit_after: 4,
             });
             assert_eq!(
-                nrz.collect::<Vec<Value>>(),
+                nrzi.collect::<Vec<Value>>(),
                 vec![
                     Value::StartOfFrame,
                     Value::Bit(true),
@@ -274,12 +274,12 @@ pub mod nrz {
 
         #[test]
         fn byte_with_bit_stuffing_needed() {
-            let nrz = NRZ::new(Parameters {
+            let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_1000_0100],
                 stuff_bit_after: 4,
             });
             assert_eq!(
-                nrz.collect::<Vec<Value>>(),
+                nrzi.collect::<Vec<Value>>(),
                 vec![
                     Value::StartOfFrame,
                     Value::Bit(true),
@@ -303,12 +303,12 @@ pub mod nrz {
 
         #[test]
         fn multibyte_test_1() {
-            let nrz = NRZ::new(Parameters {
+            let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_1001_1000, 0b_0010_0010],
                 stuff_bit_after: 4,
             });
             assert_eq!(
-                nrz.collect::<Vec<Value>>(),
+                nrzi.collect::<Vec<Value>>(),
                 vec![
                     Value::StartOfFrame,
                     Value::Bit(true),

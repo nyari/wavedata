@@ -5,15 +5,15 @@ use crate::units::{Amplitude, Frequency, Proportion, Time};
 
 use crate::signals::{BinaryLevel, Signal};
 
-type NRZEncoder = encodings::enc::nrz::NRZ;
+type NRZIEncoder = encodings::enc::nrzi::NRZI;
 
-pub struct NRZConsts {
+pub struct NRZIConsts {
     transition_width: Time,
     baud_length: Time,
     highlow: (Amplitude, Amplitude),
 }
 
-impl NRZConsts {
+impl NRZIConsts {
     pub fn new(
         baudrate: Frequency,
         transition_width: Proportion,
@@ -27,32 +27,32 @@ impl NRZConsts {
     }
 }
 
-struct NRZState {
-    nrz: NRZEncoder,
+struct NRZIState {
+    nrzi: NRZIEncoder,
     current_transition_progress: Time,
     current_level: BinaryLevel,
 }
 
-impl NRZState {
-    pub fn init(nrz_params: encodings::enc::nrz::Parameters) -> Self {
+impl NRZIState {
+    pub fn init(nrzi_params: encodings::enc::nrzi::Parameters) -> Self {
         Self {
-            nrz: NRZEncoder::new(nrz_params),
+            nrzi: NRZIEncoder::new(nrzi_params),
             current_transition_progress: Time::zero(),
             current_level: BinaryLevel::Low,
         }
     }
 }
 
-pub struct NRZ {
-    c: NRZConsts,
-    m: NRZState,
+pub struct NRZI {
+    c: NRZIConsts,
+    m: NRZIState,
 }
 
-impl NRZ {
-    pub fn new(c: NRZConsts, nrz_params: encodings::enc::nrz::Parameters) -> Self {
+impl NRZI {
+    pub fn new(c: NRZIConsts, nrzi_params: encodings::enc::nrzi::Parameters) -> Self {
         Self {
             c: c,
-            m: NRZState::init(nrz_params),
+            m: NRZIState::init(nrzi_params),
         }
     }
 
@@ -93,10 +93,10 @@ impl NRZ {
             if self.transition() {
                 self.m.current_level = self.m.current_level.neg()
             }
-            self.m.nrz.advance();
+            self.m.nrzi.advance();
         }
 
-        if let encodings::enc::nrz::Value::Complete = self.m.nrz.current() {
+        if let encodings::enc::nrzi::Value::Complete = self.m.nrzi.current() {
             Err(crate::signals::Error::Finished)
         } else {
             Ok(())
@@ -104,11 +104,11 @@ impl NRZ {
     }
 
     fn transition(&self) -> bool {
-        match self.m.nrz.current() {
-            encodings::enc::nrz::Value::StartOfFrame
-            | encodings::enc::nrz::Value::StuffBit
-            | encodings::enc::nrz::Value::Bit(true) => true,
-            encodings::enc::nrz::Value::EndOfFrame(eofidx) => {
+        match self.m.nrzi.current() {
+            encodings::enc::nrzi::Value::StartOfFrame
+            | encodings::enc::nrzi::Value::StuffBit
+            | encodings::enc::nrzi::Value::Bit(true) => true,
+            encodings::enc::nrzi::Value::EndOfFrame(eofidx) => {
                 match (self.m.current_level, eofidx) {
                     (BinaryLevel::Low, 0) => true,
                     (BinaryLevel::Low, _) => false,
@@ -122,7 +122,7 @@ impl NRZ {
     }
 }
 
-impl Signal for NRZ {
+impl Signal for NRZI {
     fn advance_with(&mut self, dt: Time) -> Result<Amplitude, crate::signals::Error> {
         let result = self.current_value();
         self.advance(dt)?;
@@ -135,142 +135,142 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nrz_full_test_ending_zero_1() {
-        let mut nrz = NRZ::new(
-            NRZConsts::new(
+    fn nrzi_full_test_ending_zero_1() {
+        let mut nrzi = NRZI::new(
+            NRZIConsts::new(
                 Frequency::new(1.0),
                 Proportion::new(1.0),
                 (Amplitude::new(1.0), Amplitude::new(0.0)),
             ),
-            encodings::enc::nrz::Parameters::new(vec![0b_0100_0010_u8], 4),
+            encodings::enc::nrzi::Parameters::new(vec![0b_0100_0010_u8], 4),
         );
 
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         );
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.5)
         );
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(1.0)
         ); // End of start of frame
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(1.0)
         ); // Mid 1. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(1.0)
         ); // End 1. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.5)
         ); // Mid 2. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End 2. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // Mid 3. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End 3. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // Mid 4. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End 4. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // Mid 5. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End 5. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // Mid 6. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End 6. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.5)
         ); // Mid stuff bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(1.0)
         ); // End stuff bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.5)
         ); // Mid 7. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End 7. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // Mid 8. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End 8. bit
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.5)
         ); // Mid EOF 0
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(1.0)
         ); // End EOF 0
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.5)
         ); // Mid EOF 1
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End EOF 1
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // Mid EOF 2
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End EOF 2
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // Mid EOF 3
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End EOF 3
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // Mid EOF 4
         assert_eq!(
-            nrz.advance_with(Time::new(0.5)).unwrap(),
+            nrzi.advance_with(Time::new(0.5)).unwrap(),
             Amplitude::new(0.0)
         ); // End EOF 4
         assert!(matches!(
-            nrz.advance_with(Time::new(0.5)),
+            nrzi.advance_with(Time::new(0.5)),
             Err(crate::signals::Error::Finished)
         ));
     }
