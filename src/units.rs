@@ -123,14 +123,14 @@ impl Amplitude {
         let denominator = if rhs.0.is_zero() { f32::EPSILON } else { rhs.0 };
         Proportion(self.0 / denominator)
     }
-    pub fn mul(self, value: f32) -> Amplitude {
-        Amplitude(self.0 * value)
+    pub fn mul(self, value: f32) -> Self {
+        Self(self.0 * value)
     }
-    pub fn div(self, value: f32) -> Amplitude {
-        Amplitude(self.0 / value)
+    pub fn div(self, value: f32) -> Self {
+        Self(self.0 / value)
     }
-    pub fn abs(self) -> Amplitude {
-        Amplitude(self.0.abs())
+    pub fn abs(self) -> Self {
+        Self(self.0.abs())
     }
 }
 
@@ -180,6 +180,9 @@ impl Proportion {
     }
     pub fn scale_usize(self, rhs: usize) -> usize {
         (self.0 * (rhs as f32)) as usize
+    }
+    pub fn neg(self) -> Self {
+        Self(-self.0)
     }
 }
 trait Clampable<T> {

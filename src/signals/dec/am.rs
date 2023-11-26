@@ -68,6 +68,8 @@ struct TransitionSearch {
     sig_begin_offset: usize,
     mid_transition_window_offset: usize,
     transitionless_windows: usize,
+    average: Amplitude,
+    signals_len: usize,
 }
 
 impl TransitionSearch {
@@ -85,15 +87,19 @@ impl TransitionSearch {
         search_for: TransitionState,
     ) -> Option<Self> {
         let conv = Self::conv(signals, &p.kernel);
-        let median = utils::median_non_averaged(&conv).unwrap().abs();
+        let average = conv
+            .iter()
+            .fold(Amplitude::zero(), |acc, val| acc + val.abs())
+            .div(signals.len() as f32);
 
         let search_result = {
             let mut windows = conv.windows(3).enumerate();
             match search_for {
                 TransitionState::Rising => windows
-                    .find(|(_, win)| win[1].relative_to(median) > p.min_snr && utils::nms(win)),
-                TransitionState::Falling => windows
-                    .find(|(_, win)| win[1].relative_to(median) < p.min_snr && utils::nms(win)),
+                    .find(|(_, win)| win[1].relative_to(average) > p.min_snr && utils::nms(win)),
+                TransitionState::Falling => windows.find(|(_, win)| {
+                    win[1].relative_to(average) < p.min_snr.neg() && utils::nms(win)
+                }),
                 _ => panic!("Incorrect parameter on call"),
             }
         };
@@ -104,11 +110,13 @@ impl TransitionSearch {
             let sig_begin_offset = idx + 1;
 
             Some(Self {
-                snr: transition_value.relative_to(median),
+                snr: transition_value.relative_to(average),
                 ts: search_for,
                 sig_begin_offset,
                 mid_transition_window_offset: sig_begin_offset + p.half_window_width,
                 transitionless_windows: sig_begin_offset / p.window_width,
+                average: average,
+                signals_len: signals.len(),
             })
         } else {
             None
