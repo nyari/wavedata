@@ -322,6 +322,8 @@ impl TransitionDecoder {
             },
             None => {
                 if hold_window.len() >= hold_window_size {
+                    self.m
+                        .parse_traisition(TransitionState::Hold(self.c.max_transitionless_windows));
                     self.m.parse_traisition(TransitionState::Noise(1))
                 }
             },
@@ -409,7 +411,7 @@ mod tests {
 
         assert_eq!(parameters.carrier_frequency, Frequency::new(20000.0));
         assert_eq!(parameters.sampling_rate, SamplingRate::new(44100));
-        assert_eq!(parameters.fft_window_sc, SampleCount::new(13));
+        assert_eq!(parameters.fft_window_sc, SampleCount::new(55));
         assert_eq!(parameters.max_transitionless_windows, 5);
     }
 
@@ -553,6 +555,7 @@ mod integration_test {
                 TransitionState::Rising,
                 TransitionState::Hold(2),
                 TransitionState::Falling,
+                TransitionState::Hold(4),
                 TransitionState::Noise(1)
             ]
         );
