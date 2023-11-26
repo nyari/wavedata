@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     sampling::{SampleCount, Samples, SamplingRate},
-    signals::proc::FFT,
+    signals::{proc::FFT, TransitionState},
     units::{Amplitude, Frequency, Proportion},
     utils::{self, WindowedWeightedAverage},
 };
@@ -10,24 +10,6 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 enum Error {
     IncorrectTransition,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransitionState {
-    Rising,
-    Falling,
-    Hold(usize),
-    Noise(usize),
-}
-
-impl TransitionState {
-    fn neg(self) -> Self {
-        match self {
-            TransitionState::Rising => TransitionState::Falling,
-            TransitionState::Falling => TransitionState::Rising,
-            _ => panic!("Non negatable transition state"),
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -91,7 +73,7 @@ impl TransitionSearch {
         let calculated_noise_level = conv
             .iter()
             .fold(Amplitude::zero(), |acc, val| acc + val.abs())
-            .div(signals.len() as f32);
+            .recip_scale(signals.len() as f32);
         let noise_level = match ref_noise_level {
             None => calculated_noise_level,
             Some(n) => n,
@@ -440,6 +422,8 @@ mod tests {
 
 #[cfg(test)]
 mod integration_test {
+    use num::Zero;
+
     use crate::{
         sampling::{Sampleable, SamplesMut},
         units::Time,

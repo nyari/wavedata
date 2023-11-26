@@ -10,9 +10,6 @@ impl Time {
     pub fn new(value: f32) -> Self {
         Self(value)
     }
-    pub fn zero() -> Self {
-        Self(0f32)
-    }
     pub fn value(self) -> f32 {
         self.0
     }
@@ -21,6 +18,16 @@ impl Time {
     }
     pub fn mul(self, value: f32) -> Time {
         Time(self.0 * value)
+    }
+}
+
+impl num::Zero for Time {
+    fn zero() -> Self {
+        Self(0f32)
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0 == 0.0
     }
 }
 
@@ -89,12 +96,26 @@ impl Frequency {
     pub fn cycle_time(self) -> Time {
         Time(self.0.recip())
     }
+    pub fn recip_scale(self, rhs: f32) -> Self {
+        Self(self.0 / rhs)
+    }
+    pub fn bandwidth_steps(self, step_band: Frequency) -> usize {
+        (self.recip_scale(2.0).value() / step_band.value()).round() as usize
+    }
 }
 
 impl std::ops::Div for Frequency {
     type Output = f32;
     fn div(self, rhs: Self) -> Self::Output {
         self.0 / rhs.0
+    }
+}
+
+impl std::ops::Mul<Time> for Frequency {
+    type Output = f32;
+
+    fn mul(self, rhs: Time) -> Self::Output {
+        self.0 * rhs.0
     }
 }
 
@@ -123,10 +144,10 @@ impl Amplitude {
         let denominator = if rhs.0.is_zero() { f32::EPSILON } else { rhs.0 };
         Proportion(self.0 / denominator)
     }
-    pub fn mul(self, value: f32) -> Self {
+    pub fn scale(self, value: f32) -> Self {
         Self(self.0 * value)
     }
-    pub fn div(self, value: f32) -> Self {
+    pub fn recip_scale(self, value: f32) -> Self {
         Self(self.0 / value)
     }
     pub fn abs(self) -> Self {
@@ -182,9 +203,6 @@ impl Proportion {
     pub fn value(self) -> f32 {
         self.0
     }
-    pub fn zero() -> Self {
-        Self(0.0f32)
-    }
     pub fn scale_usize(self, rhs: usize) -> usize {
         (self.0 * (rhs as f32)) as usize
     }
@@ -192,6 +210,25 @@ impl Proportion {
         Self(-self.0)
     }
 }
+
+impl std::ops::Add for Proportion {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl num::Zero for Proportion {
+    fn zero() -> Self {
+        Self(0.0)
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0 == 0.0
+    }
+}
+
 trait Clampable<T> {
     fn clamp(self, lower: T, higher: T) -> T;
 }

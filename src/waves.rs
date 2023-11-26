@@ -1,3 +1,5 @@
+use num::Zero;
+
 use crate::units::{Amplitude, Frequency, Time};
 
 pub trait Wave: Sized + Send {
@@ -38,7 +40,7 @@ impl Wave for Sine {
         let offset_t = self.phase_offset + t;
         let apply_pi = offset_t.mul(2.0f32 * std::f32::consts::PI);
         let apply_frequency = apply_pi * self.freq;
-        Amplitude::new(apply_frequency.sin() * self.amplitude.value())
+        self.amplitude.scale(apply_frequency.sin())
     }
 }
 

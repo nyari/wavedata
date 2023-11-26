@@ -1,3 +1,5 @@
+use num::Zero;
+
 use crate::encodings::{self};
 use crate::units::{Amplitude, Frequency, Proportion, Time};
 
@@ -77,7 +79,7 @@ impl NRZ {
             self.level_to_amplitude(self.m.current_level.neg()),
         );
         let delta = to - from;
-        from + (delta.mul(progress))
+        from + (delta.scale(progress))
     }
 
     fn advance(&mut self, dt: Time) -> Result<(), crate::signals::Error> {

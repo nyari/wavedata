@@ -30,6 +30,24 @@ impl BinaryLevel {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransitionState {
+    Rising,
+    Falling,
+    Hold(usize),
+    Noise(usize),
+}
+
+impl TransitionState {
+    fn neg(self) -> Self {
+        match self {
+            TransitionState::Rising => TransitionState::Falling,
+            TransitionState::Falling => TransitionState::Rising,
+            _ => panic!("Non negatable transition state"),
+        }
+    }
+}
+
 pub struct CompositeSignal<F, S1, S2>
 where
     F: Fn((Amplitude, Amplitude), Time) -> Amplitude + Send,

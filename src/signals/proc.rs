@@ -17,7 +17,7 @@ pub mod dft {
     use super::Frequency;
 
     pub fn step(frequency_steps: usize, max_frequency: Frequency) -> Frequency {
-        Frequency::new(max_frequency.value() / frequency_steps as f32)
+        max_frequency.recip_scale(frequency_steps as f32)
     }
 }
 
@@ -49,7 +49,7 @@ impl DFT {
         bandwidth: Frequency,
     ) -> Result<&'a [Complex<f32>], Error> {
         let step = self.step();
-        let steps = ((bandwidth.value() / 2.0) / step.value()).round() as usize;
+        let steps = bandwidth.bandwidth_steps(step);
         self.band_steps(freq, steps)
     }
 
@@ -77,7 +77,7 @@ impl DFT {
             .fold(Amplitude::new(0.0), |acc, elem| {
                 acc + Amplitude::new(elem.abs())
             })
-            .div((samples_count) as f32)
+            .recip_scale((samples_count) as f32)
     }
 
     pub fn absolute_amplitude_average_at(
