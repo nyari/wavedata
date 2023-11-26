@@ -180,6 +180,9 @@ impl<T> WindowedWeightedAverage<T> {
             internal_weight: internal_weight,
         }
     }
+    pub fn value(&self) -> &T {
+        &self.value
+    }
 }
 
 impl<T> WindowedWeightedAverage<T>

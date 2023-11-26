@@ -4,7 +4,7 @@ use crate::{
     sampling::{SampleCount, Samples, SamplingRate},
     signals::proc::FFT,
     units::{Amplitude, Frequency, Proportion},
-    utils,
+    utils::{self, WindowedWeightedAverage},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -14,9 +14,9 @@ enum Error {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionState {
-    Hold(usize),
     Rising,
     Falling,
+    Hold(usize),
     Noise(usize),
 }
 
@@ -68,7 +68,7 @@ struct TransitionSearch {
     sig_begin_offset: usize,
     mid_transition_window_offset: usize,
     transitionless_windows: usize,
-    average: Amplitude,
+    noise_level: Amplitude,
     signals_len: usize,
 }
 
@@ -85,20 +85,26 @@ impl TransitionSearch {
         p: &TransitionSearchParams,
         signals: &[Amplitude],
         search_for: TransitionState,
+        ref_noise_level: Option<Amplitude>,
     ) -> Option<Self> {
         let conv = Self::conv(signals, &p.kernel);
-        let average = conv
+        let calculated_noise_level = conv
             .iter()
             .fold(Amplitude::zero(), |acc, val| acc + val.abs())
             .div(signals.len() as f32);
+        let noise_level = match ref_noise_level {
+            None => calculated_noise_level,
+            Some(n) => n,
+        };
 
         let search_result = {
             let mut windows = conv.windows(3).enumerate();
             match search_for {
-                TransitionState::Rising => windows
-                    .find(|(_, win)| win[1].relative_to(average) > p.min_snr && utils::nms(win)),
+                TransitionState::Rising => windows.find(|(_, win)| {
+                    win[1].relative_to(noise_level) > p.min_snr && utils::nms(win)
+                }),
                 TransitionState::Falling => windows.find(|(_, win)| {
-                    win[1].relative_to(average) < p.min_snr.neg() && utils::nms(win)
+                    win[1].relative_to(noise_level) < p.min_snr.neg() && utils::nms(win)
                 }),
                 _ => panic!("Incorrect parameter on call"),
             }
@@ -110,12 +116,12 @@ impl TransitionSearch {
             let sig_begin_offset = idx + 1;
 
             Some(Self {
-                snr: transition_value.relative_to(average),
+                snr: transition_value.relative_to(noise_level),
                 ts: search_for,
                 sig_begin_offset,
                 mid_transition_window_offset: sig_begin_offset + p.half_window_width,
                 transitionless_windows: sig_begin_offset / p.window_width,
-                average: average,
+                noise_level: calculated_noise_level,
                 signals_len: signals.len(),
             })
         } else {
@@ -164,6 +170,7 @@ struct State {
     backlog: std::sync::Mutex<VecDeque<f32>>,
     carrier_amplitudes: VecDeque<Amplitude>,
     transitions: VecDeque<TransitionState>,
+    noise_level: WindowedWeightedAverage<Amplitude>,
     sm: StateMachine,
     fft: FFT,
 }
@@ -175,12 +182,16 @@ enum PushOp {
 }
 
 impl State {
-    fn new() -> Self {
+    fn new(transition_width: usize) -> Self {
         Self {
             realtime_backlog: std::sync::Mutex::new(VecDeque::new()),
             backlog: std::sync::Mutex::new(VecDeque::new()),
             carrier_amplitudes: VecDeque::new(),
             transitions: VecDeque::new(),
+            noise_level: WindowedWeightedAverage::new(
+                Amplitude::zero(),
+                Amplitude::new(transition_width as f32),
+            ),
             sm: StateMachine::Searching,
             fft: FFT::new(),
         }
@@ -220,6 +231,9 @@ impl State {
             (StateMachine::Searching, _) => {
                 panic!("Incorrect internal state... Searching only accepts rising transition")
             },
+            (StateMachine::Synchronized(previous_expected), TransitionState::Hold(0)) => {
+                StateMachine::Synchronized(previous_expected)
+            },
             (StateMachine::Synchronized(previous_expected), change) => {
                 match self.push_transition(change) {
                     TransitionState::Noise(_) => StateMachine::Searching,
@@ -249,9 +263,11 @@ pub struct TransitionDecoder {
 
 impl TransitionDecoder {
     pub fn new(c: Parameters) -> Self {
+        let noise_window =
+            8 * c.max_transitionless_windows * c.transiton_searc_params.transition_width;
         Self {
             c: c,
-            m: State::new(),
+            m: State::new(noise_window),
         }
     }
 
@@ -279,21 +295,30 @@ impl TransitionDecoder {
 
     fn next_baud(&mut self, search_for: TransitionState) {
         self.m.carrier_amplitudes.make_contiguous();
-        let hold_window_size =
-            self.c.transiton_searc_params.window_width * (self.c.max_transitionless_windows + 1);
+        let hold_window_size = self.c.transiton_searc_params.window_width
+            * (self.c.max_transitionless_windows + 1)
+            + self.c.transiton_searc_params.half_window_width;
 
         let hold_window = utils::begin_upper_limit_slice(
             self.m.carrier_amplitudes.as_slices().0,
             hold_window_size,
         );
 
-        match TransitionSearch::search(&self.c.transiton_searc_params, hold_window, search_for) {
+        match TransitionSearch::search(
+            &self.c.transiton_searc_params,
+            hold_window,
+            search_for,
+            Some(self.m.noise_level.value().clone()),
+        ) {
             Some(ts) => {
                 self.m
                     .parse_traisition(TransitionState::Hold(ts.transitionless_windows));
                 self.m.parse_traisition(ts.ts);
                 self.m
                     .drain_carrier_amplitudes(ts.mid_transition_window_offset);
+                self.m
+                    .noise_level
+                    .acc(ts.noise_level, Amplitude::new(ts.signals_len as f32))
             },
             None => {
                 if hold_window.len() >= hold_window_size {
@@ -311,6 +336,7 @@ impl TransitionDecoder {
                 &self.c.transiton_searc_params,
                 signals,
                 TransitionState::Rising,
+                None,
             )
         };
 
@@ -319,6 +345,9 @@ impl TransitionDecoder {
                 self.m.parse_traisition(TransitionState::Rising);
                 self.m
                     .drain_carrier_amplitudes(res.mid_transition_window_offset);
+                self.m
+                    .noise_level
+                    .acc(res.noise_level, Amplitude::new(res.signals_len as f32))
             },
             _ => {
                 self.m.drain_carrier_amplitudes(
@@ -485,7 +514,7 @@ mod integration_test {
             sampling_rate: SamplingRate::new(44100),
             carrier_amplitude: Amplitude::new(1.0),
             baudrate: Frequency::new(100.0),
-            transition_width: Proportion::new(0.5),
+            transition_width: Proportion::new(0.25),
             high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
             stuff_bit: 4,
         };

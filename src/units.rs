@@ -165,6 +165,13 @@ impl std::ops::Sub for Amplitude {
     }
 }
 
+impl std::ops::Div for Amplitude {
+    type Output = Self;
+    fn div(self, rhs: Self) -> Self::Output {
+        Self(self.0 / rhs.0)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub struct Proportion(f32);
 
