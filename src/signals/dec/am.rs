@@ -20,10 +20,20 @@ pub enum TransitionState {
     Noise(usize),
 }
 
+impl TransitionState {
+    fn neg(self) -> Self {
+        match self {
+            TransitionState::Rising => TransitionState::Falling,
+            TransitionState::Falling => TransitionState::Rising,
+            _ => panic!("Non negatable transition state"),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum StateMachine {
     Searching,
-    Synchronized,
+    Synchronized(TransitionState),
 }
 
 struct TransitionSearchParams {
@@ -31,7 +41,7 @@ struct TransitionSearchParams {
     half_window_width: usize,
     window_width: usize,
     monitor_width: usize,
-    kernel: Box<[Amplitude]>,
+    kernel: Vec<Amplitude>,
     min_snr: Proportion,
 }
 
@@ -46,7 +56,7 @@ impl TransitionSearchParams {
             half_window_width: window_width / 2,
             window_width,
             monitor_width: window_width * 2,
-            kernel: kernel.into_boxed_slice(),
+            kernel: kernel,
             min_snr,
         }
     }
@@ -61,52 +71,45 @@ struct TransitionSearch {
 }
 
 impl TransitionSearch {
-    pub fn search(p: &TransitionSearchParams, signals: &[Amplitude]) -> Option<Self> {
-        let conv_res_length = utils::conv1d::valid_result_length(signals.len(), p.kernel.len());
-        let conv = {
-            let mut res = Vec::new();
-            res.resize(conv_res_length, Amplitude::zero());
-            utils::conv1d::valid(signals, &p.kernel, &mut res).unwrap();
-            res
-        };
-        let abs_conv: Vec<_> = conv.iter().map(|i| i.abs()).collect();
+    fn conv(signal: &[Amplitude], kernel: &[Amplitude]) -> Vec<Amplitude> {
+        let conv_res_length = utils::conv1d::valid_result_length(signal.len(), kernel.len());
+        let mut res = Vec::new();
+        res.resize(conv_res_length, Amplitude::zero());
+        utils::conv1d::valid(signal, &kernel, &mut res).unwrap();
+        res
+    }
 
-        let median = utils::median_non_averaged(&abs_conv).unwrap().abs();
-        let max = abs_conv
-            .iter()
-            .max_by(|lhs, rhs| lhs.abs().partial_cmp(&rhs.abs()).unwrap())
-            .unwrap();
+    pub fn search(
+        p: &TransitionSearchParams,
+        signals: &[Amplitude],
+        search_for: TransitionState,
+    ) -> Option<Self> {
+        let conv = Self::conv(signals, &p.kernel);
+        let median = utils::median_non_averaged(&conv).unwrap().abs();
 
-        let snr = max.relative_to(median);
-
-        if snr >= p.min_snr {
-            if let Some((idx, _)) = abs_conv
-                .windows(3)
-                .enumerate()
-                .find(|(_, win)| win[1].abs().relative_to(median) > p.min_snr && utils::nms(win))
-            {
-                let ts = if conv[idx + 1]
-                    .partial_cmp(&Amplitude::zero())
-                    .unwrap()
-                    .is_gt()
-                {
-                    TransitionState::Rising
-                } else {
-                    TransitionState::Falling
-                };
-
-                let sig_begin_offset = idx + 1;
-
-                Some(Self {
-                    snr,
-                    ts,
-                    sig_begin_offset,
-                    mid_transition_window_offset: sig_begin_offset + p.half_window_width,
-                    transitionless_windows: sig_begin_offset / p.window_width,
-                })
-            } else {
-                None
+        let search_result = {
+            let mut windows = conv.windows(3).enumerate();
+            match search_for {
+                TransitionState::Rising => windows
+                    .find(|(_, win)| win[1].relative_to(median) > p.min_snr && utils::nms(win)),
+                TransitionState::Falling => windows
+                    .find(|(_, win)| win[1].relative_to(median) < p.min_snr && utils::nms(win)),
+                _ => panic!("Incorrect parameter on call"),
             }
+        };
+
+        if let Some((idx, _)) = search_result {
+            let transition_value = conv[idx + 1].abs();
+
+            let sig_begin_offset = idx + 1;
+
+            Some(Self {
+                snr: transition_value.relative_to(median),
+                ts: search_for,
+                sig_begin_offset,
+                mid_transition_window_offset: sig_begin_offset + p.half_window_width,
+                transitionless_windows: sig_begin_offset / p.window_width,
+            })
         } else {
             None
         }
@@ -203,15 +206,18 @@ impl State {
         self.sm = match (self.sm, ts) {
             (StateMachine::Searching, TransitionState::Rising) => {
                 self.push_transition(TransitionState::Rising);
-                StateMachine::Synchronized
+                StateMachine::Synchronized(TransitionState::Falling)
             },
             (StateMachine::Searching, TransitionState::Noise(_)) => StateMachine::Searching,
             (StateMachine::Searching, _) => {
                 panic!("Incorrect internal state... Searching only accepts rising transition")
             },
-            (StateMachine::Synchronized, change) => match self.push_transition(change) {
-                TransitionState::Noise(_) => StateMachine::Searching,
-                _ => StateMachine::Synchronized,
+            (StateMachine::Synchronized(previous_expected), change) => {
+                match self.push_transition(change) {
+                    TransitionState::Noise(_) => StateMachine::Searching,
+                    TransitionState::Hold(_) => StateMachine::Synchronized(previous_expected),
+                    _ => StateMachine::Synchronized(previous_expected.neg()),
+                }
             },
         }
     }
@@ -258,12 +264,12 @@ impl TransitionDecoder {
         while self.m.carrier_amplitudes.len() > self.c.transiton_searc_params.window_width {
             match self.m.sm {
                 StateMachine::Searching => self.search(),
-                StateMachine::Synchronized => self.next_baud(),
+                StateMachine::Synchronized(next_expected) => self.next_baud(next_expected),
             }
         }
     }
 
-    fn next_baud(&mut self) {
+    fn next_baud(&mut self, search_for: TransitionState) {
         self.m.carrier_amplitudes.make_contiguous();
         let hold_window_size =
             self.c.transiton_searc_params.window_width * (self.c.max_transitionless_windows + 1);
@@ -273,7 +279,7 @@ impl TransitionDecoder {
             hold_window_size,
         );
 
-        match TransitionSearch::search(&self.c.transiton_searc_params, hold_window) {
+        match TransitionSearch::search(&self.c.transiton_searc_params, hold_window, search_for) {
             Some(ts) => {
                 self.m
                     .parse_traisition(TransitionState::Hold(ts.transitionless_windows));
@@ -293,16 +299,20 @@ impl TransitionDecoder {
         self.m.carrier_amplitudes.make_contiguous();
         let ts = {
             let signals = self.m.carrier_amplitudes.as_slices().0;
-            TransitionSearch::search(&self.c.transiton_searc_params, signals)
+            TransitionSearch::search(
+                &self.c.transiton_searc_params,
+                signals,
+                TransitionState::Rising,
+            )
         };
 
         match ts {
-            Some(res) => {
+            Some(res) if res.ts == TransitionState::Rising => {
                 self.m.parse_traisition(TransitionState::Rising);
                 self.m
                     .drain_carrier_amplitudes(res.mid_transition_window_offset);
             },
-            None => {
+            _ => {
                 self.m.drain_carrier_amplitudes(
                     self.m.carrier_amplitudes.len()
                         - self.c.transiton_searc_params.half_window_width,
@@ -461,7 +471,7 @@ mod integration_test {
     #[test]
     fn integration_test_1() {
         let p = Params {
-            lead_in: Time::new(0.5),
+            lead_in: Time::new(0.005),
             lead_out: Time::new(0.5),
             carrier_frequency: Frequency::new(20000.0),
             sampling_rate: SamplingRate::new(44100),

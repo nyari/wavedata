@@ -152,34 +152,15 @@ pub fn nms<T>(input: &[T]) -> bool
 where
     T: PartialOrd + Clone,
 {
-    let halfpoint = input.len() / 2;
-    let init = input[0].clone();
-    let a = input
-        .iter()
-        .skip(1)
-        .enumerate()
-        .fold(
-            ((true, true, true), init),
-            |((begin, mid, end), last), (idx, item)| {
-                let begin_current = last.partial_cmp(item).unwrap().is_ge();
-                let end_current = last.partial_cmp(item).unwrap().is_le();
-                let mid_current = if idx < halfpoint {
-                    last.partial_cmp(item).unwrap().is_le()
-                } else {
-                    last.partial_cmp(item).unwrap().is_ge()
-                };
-                (
-                    (
-                        begin && begin_current,
-                        mid && mid_current,
-                        end && end_current,
-                    ),
-                    item.clone(),
-                )
-            },
-        )
-        .0;
-    a.0 || a.1 || a.2
+    let sum = input
+        .windows(2)
+        .map(|window| match window[0].le(&window[1]) {
+            true => 1,
+            _ => -1,
+        })
+        .sum::<isize>();
+
+    sum == 0
 }
 
 pub fn begin_upper_limit_slice<'a, T>(input: &'a [T], size: usize) -> &'a [T] {

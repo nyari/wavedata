@@ -22,12 +22,12 @@ pub mod dft {
 }
 
 pub struct DFT {
-    dft: Box<[Complex<f32>]>,
+    dft: Vec<Complex<f32>>,
     rate: SamplingRate,
 }
 
 impl DFT {
-    pub fn new(dft: Box<[Complex<f32>]>, rate: SamplingRate) -> Self {
+    pub fn new(dft: Vec<Complex<f32>>, rate: SamplingRate) -> Self {
         Self { dft, rate }
     }
 
@@ -123,7 +123,7 @@ impl FFT {
             output.as_mut_slice(),
             scratch.as_mut_slice(),
         );
-        DFT::new(output.into_boxed_slice(), rate)
+        DFT::new(output, rate)
     }
 
     pub fn fft_inverse(&self, _: &[Complex<f32>]) -> Box<[Complex<f32>]> {
