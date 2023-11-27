@@ -206,7 +206,7 @@ impl BitIndex {
         Self(idx / 8, (idx % 8) as u8)
     }
 
-    pub fn comp(byte_idx: usize, bit_idx: u8) -> Self {
+    pub fn compose(byte_idx: usize, bit_idx: u8) -> Self {
         Self(byte_idx, bit_idx)
     }
 
@@ -219,28 +219,16 @@ impl BitIndex {
     }
 
     pub fn offset(self, offset: isize) -> Self {
-        let byte_idx_offset = offset / 8;
-        let bit_idx_offset = (offset % 8) as i8;
-
-        let mut result_byte_idx = self.0 as isize;
-        let mut result_bit_idx = self.1 as i8;
-
-        result_byte_idx += byte_idx_offset;
-        result_bit_idx += bit_idx_offset;
-
-        if result_bit_idx < 0 {
-            result_byte_idx -= 1;
-            result_bit_idx += 8;
-        } else if result_bit_idx > 7 {
-            result_byte_idx += 1;
-            result_bit_idx -= 8;
+        let len = self.len();
+        if offset < 0 {
+            if ((-offset) as usize) < len {
+                Self::new(len - ((-offset) as usize))
+            } else {
+                Self::new(0)
+            }
+        } else {
+            Self::new(len + offset as usize)
         }
-
-        if result_byte_idx < 0 {
-            panic!("Incorrect resulting index");
-        }
-
-        Self(result_byte_idx as usize, result_bit_idx as u8)
     }
 }
 
@@ -251,12 +239,11 @@ impl BitVec {
         Self(Vec::new(), 0)
     }
 
-    pub fn push(&mut self, _: bool) {
+    pub fn push(&mut self, value: bool) {
         let blen = self.blen().offset(1);
         self.0.resize(blen.0, 0u8);
         self.1 = blen.1;
-        self.0[blen.0] = Self::set_bit(self.0[blen.0].clone(), blen.1);
-        todo!();
+        self.0[blen.0] = Self::set_bit(self.0[blen.0].clone(), blen.1, value);
     }
 
     pub fn len(&self) -> usize {
@@ -264,14 +251,25 @@ impl BitVec {
     }
 
     fn blen(&self) -> BitIndex {
-        BitIndex::comp(self.0.len(), self.1)
+        BitIndex::compose(self.0.len(), self.1)
     }
 
     pub fn read_bit(b: u8, n: u8) -> bool {
         b & (0b_1_u8 << n) != 0u8
     }
 
-    pub fn set_bit(b: u8, n: u8) -> u8 {
-        b | (0b_1_u8 << n)
+    pub fn truncate_last_incomplete_byte(&mut self) {
+        let blen = self.blen();
+        self.0.resize(blen.0, 0u8);
+    }
+
+    pub fn set_bit(b: u8, n: u8, value: bool) -> u8 {
+        let bit = 0b_1_u8 << n;
+        let result = b & !bit;
+        if value {
+            result | bit
+        } else {
+            result
+        }
     }
 }

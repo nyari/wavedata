@@ -5,7 +5,7 @@ use crate::{
     sampling::{SampleCount, Samples, SamplingRate},
     signals::{proc::FFT, TransitionState},
     units::{Amplitude, Frequency, Proportion},
-    utils::{self, WindowedWeightedAverage},
+    utils::{self, BitVec, WindowedWeightedAverage},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -390,13 +390,13 @@ pub struct NRZIFrame {
 
 pub struct NRZI {
     stuff_bit_after: usize,
-    payload: Vec<Value>,
+    payload: BitVec,
     frame_offset: usize,
 }
 
 impl NRZI {
     pub fn parse(frame: &[TransitionState], bit_stuffing: usize) -> Result<Self, Error> {
-        let mut result = Vec::new();
+        let mut result = BitVec::new();
         let mut sm = NRZIState::Begin;
 
         for (idx, ts) in frame.iter().enumerate() {
@@ -407,7 +407,7 @@ impl NRZI {
                 (NRZIState::Bit(hold_count), TransitionState::Hold(hold_length)) => {
                     if *hold_length + hold_count <= bit_stuffing {
                         for _ in 0..*hold_length {
-                            result.push(Value::Bit(false));
+                            result.push(false);
                         }
                         Ok(NRZIState::Bit(hold_count + hold_length))
                     } else {
@@ -416,20 +416,16 @@ impl NRZI {
                 },
                 (NRZIState::Bit(hold_count), TransitionState::Noise(_)) => {
                     if hold_count >= bit_stuffing {
-                        let bits_count = result.len();
-                        let byte_count = bits_count / 8;
-                        let byte_bit_count = byte_count * 8;
-                        let remaining_bits = result.len() % 8;
-                        if remaining_bits < bit_stuffing {
-                            result.drain(byte_bit_count..result.len()).for_each(|_| {});
-                        }
-                    }
+                        result.truncate_last_incomplete_byte();
 
-                    Ok(NRZIState::Done(idx + 1))
+                        Ok(NRZIState::Done(idx + 1))
+                    } else {
+                        Err(Error::IncompleteFrame)
+                    }
                 },
                 (NRZIState::Bit(hold_count), _) => {
                     if hold_count < bit_stuffing {
-                        result.push(Value::Bit(true));
+                        result.push(true);
                     }
                     Ok(NRZIState::Bit(0))
                 },
