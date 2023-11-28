@@ -283,7 +283,8 @@ impl TransitionDecoder {
         self.m.carrier_amplitudes.make_contiguous();
         let hold_window_size = self.c.transiton_searc_params.window_width
             * (self.c.max_transitionless_windows + 1)
-            + self.c.transiton_searc_params.half_window_width;
+            + self.c.transiton_searc_params.transition_width
+            + 2;
 
         let hold_window = utils::begin_upper_limit_slice(
             self.m.carrier_amplitudes.as_slices().0,
