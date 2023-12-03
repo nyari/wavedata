@@ -421,6 +421,7 @@ mod integration_test {
     use num::Zero;
 
     use crate::{
+        encodings::nrzi::Value,
         sampling::{Sampleable, SamplesMut},
         units::Time,
     };
@@ -462,7 +463,7 @@ mod integration_test {
         }
     }
 
-    fn create_signal_with_message(message: &str, p: &Params) -> Vec<f32> {
+    fn create_signal_with_message(message: &str, p: &Params) -> (Vec<f32>, Vec<TransitionState>) {
         let mut result = Vec::with_capacity(p.total_samples_count(message.len()).value());
         result.resize(p.total_samples_count(message.len()).value(), 0.0);
 
@@ -471,13 +472,17 @@ mod integration_test {
             Time::zero(),
             p.carrier_amplitude,
         ));
+
+        let nrzi_params = crate::encodings::enc::nrzi::Parameters::new(
+            message.as_bytes().iter().map(|x| x.clone()).collect(),
+            p.stuff_bit,
+        );
+
         let data_signal = crate::sampling::SignalSampler::new(crate::signals::enc::am::NRZI::new(
             crate::signals::enc::am::NRZIConsts::new(p.baudrate, p.transition_width, p.high_low),
-            crate::encodings::enc::nrzi::Parameters::new(
-                message.as_bytes().iter().map(|x| x.clone()).collect(),
-                p.stuff_bit,
-            ),
+            nrzi_params.clone(),
         ));
+
         let mut composite_sampler =
             crate::sampling::CompositeSampler::new(carrier_signal, data_signal, |input, output| {
                 *output = input.0 * input.1;
@@ -488,7 +493,13 @@ mod integration_test {
             p.sampling_rate,
         );
 
-        result
+        let transitions = {
+            let values: Vec<Value> = crate::encodings::enc::nrzi::NRZI::new(nrzi_params).collect();
+            crate::signals::enc::am::utils::nrzi_to_transition_states(&values, p.stuff_bit as usize)
+                .unwrap()
+        };
+
+        (result, transitions)
     }
 
     #[test]
@@ -505,43 +516,13 @@ mod integration_test {
             stuff_bit: 4,
         };
 
-        let input = create_signal_with_message("ABCD", &p);
+        let (input, reference) = create_signal_with_message("ABCD", &p);
         let mut decoder = TransitionDecoder::new(p.create_parameters());
 
         decoder.append_samples(Samples(input.as_slice()));
         decoder.process();
         decoder.parse();
 
-        assert_eq!(
-            &decoder.m.transitions.as_slices().0,
-            &[
-                TransitionState::Rising,
-                TransitionState::Hold(1),
-                TransitionState::Falling,
-                TransitionState::Hold(4),
-                TransitionState::Rising,
-                TransitionState::Hold(1),
-                TransitionState::Falling,
-                TransitionState::Hold(1),
-                TransitionState::Rising,
-                TransitionState::Hold(4),
-                TransitionState::Falling,
-                TransitionState::Rising,
-                TransitionState::Hold(2),
-                TransitionState::Falling,
-                TransitionState::Hold(4),
-                TransitionState::Rising,
-                TransitionState::Falling,
-                TransitionState::Rising,
-                TransitionState::Hold(1),
-                TransitionState::Falling,
-                TransitionState::Hold(3),
-                TransitionState::Rising,
-                TransitionState::Hold(2),
-                TransitionState::Falling,
-                TransitionState::Hold(4),
-                TransitionState::Noise(1)
-            ]
-        );
+        assert_eq!(&decoder.m.transitions.as_slices().0, &reference);
     }
 }

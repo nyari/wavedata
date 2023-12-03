@@ -9,6 +9,7 @@ pub mod nrzi {
         Complete,
     }
 
+    #[derive(Clone)]
     pub struct Parameters {
         payload: Vec<u8>, // Bytes
         stuff_bit_after: u8,

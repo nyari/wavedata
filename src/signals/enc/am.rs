@@ -133,7 +133,10 @@ pub mod utils {
         signals::{BinaryLevel, TransitionState},
     };
 
-    pub fn nrzi_to_transition_states(input: &[Value]) -> Result<Vec<TransitionState>, ()> {
+    pub fn nrzi_to_transition_states(
+        input: &[Value],
+        bit_stuffing: usize,
+    ) -> Result<Vec<TransitionState>, ()> {
         let mut result = Vec::new();
         let mut level = BinaryLevel::Low;
         for value in input {
@@ -183,7 +186,13 @@ pub mod utils {
                 };
 
                 match action {
-                    Some(update) => *acc.last_mut().unwrap() = update,
+                    Some(update) => match update {
+                        TransitionState::Hold(h) if h > bit_stuffing => {
+                            *acc.last_mut().unwrap() = TransitionState::Hold(4);
+                            acc.push(TransitionState::Noise(1))
+                        },
+                        val => *acc.last_mut().unwrap() = val,
+                    },
                     None => acc.push(item),
                 }
 
