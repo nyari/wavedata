@@ -28,6 +28,13 @@ impl BinaryLevel {
             Self::Low => Self::High,
         }
     }
+
+    fn transition(&self) -> TransitionState {
+        match self {
+            Self::High => TransitionState::Falling,
+            Self::Low => TransitionState::Rising,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -127,6 +127,75 @@ impl Signal for NRZI {
     }
 }
 
+pub mod utils {
+    use crate::{
+        encodings::nrzi::Value,
+        signals::{BinaryLevel, TransitionState},
+    };
+
+    pub fn nrzi_to_transition_states(input: &[Value]) -> Result<Vec<TransitionState>, ()> {
+        let mut result = Vec::new();
+        let mut level = BinaryLevel::Low;
+        for value in input {
+            level = match (level, value) {
+                (BinaryLevel::Low, Value::StartOfFrame) => {
+                    result.push(TransitionState::Rising);
+                    Ok(BinaryLevel::High)
+                },
+                (level, Value::StuffBit) | (level, Value::Bit(true)) => {
+                    result.push(level.transition());
+                    Ok(level.neg())
+                },
+                (level, Value::Bit(false)) => {
+                    result.push(TransitionState::Hold(1));
+                    Ok(level)
+                },
+                (BinaryLevel::Low, Value::EndOfFrame(0)) => {
+                    result.push(TransitionState::Rising);
+                    Ok(BinaryLevel::High)
+                },
+                (BinaryLevel::High, Value::EndOfFrame(eof)) if *eof <= 1 => {
+                    result.push(TransitionState::Falling);
+                    Ok(BinaryLevel::Low)
+                },
+                (BinaryLevel::Low, Value::EndOfFrame(_)) => {
+                    result.push(TransitionState::Hold(1));
+                    Ok(BinaryLevel::Low)
+                },
+                (BinaryLevel::Low, Value::Complete) => {
+                    result.push(TransitionState::Noise(1));
+                    break;
+                },
+                _ => Err(()),
+            }?;
+        }
+
+        Ok(result.into_iter().fold(Vec::new(), |mut acc, item| {
+            if !acc.is_empty() {
+                let action = match (acc.last().unwrap(), item) {
+                    (TransitionState::Hold(prev), TransitionState::Hold(curr)) => {
+                        Some(TransitionState::Hold(prev + curr))
+                    },
+                    (TransitionState::Noise(prev), TransitionState::Noise(curr)) => {
+                        Some(TransitionState::Noise(prev + curr))
+                    },
+                    _ => None,
+                };
+
+                match action {
+                    Some(update) => *acc.last_mut().unwrap() = update,
+                    None => acc.push(item),
+                }
+
+                acc
+            } else {
+                acc.push(item);
+                acc
+            }
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
