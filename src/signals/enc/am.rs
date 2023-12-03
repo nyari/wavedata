@@ -173,7 +173,7 @@ pub mod utils {
             }?;
         }
 
-        Ok(result.into_iter().fold(Vec::new(), |mut acc, item| {
+        let mut result = result.into_iter().fold(Vec::new(), |mut acc, item| {
             if !acc.is_empty() {
                 let action = match (acc.last().unwrap(), item) {
                     (TransitionState::Hold(prev), TransitionState::Hold(curr)) => {
@@ -201,7 +201,13 @@ pub mod utils {
                 acc.push(item);
                 acc
             }
-        }))
+        });
+
+        if !matches!(result.last().unwrap(), TransitionState::Noise(_)) {
+            result.push(TransitionState::Noise(1));
+        }
+
+        Ok(result)
     }
 }
 
