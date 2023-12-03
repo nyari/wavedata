@@ -444,6 +444,10 @@ impl NRZI {
             panic!("Internal error")
         }
     }
+
+    pub fn payload(&self) -> &Vec<u8> {
+        self.payload.byte_vec()
+    }
 }
 
 #[cfg(test)]
@@ -621,5 +625,42 @@ mod integration_test {
                 TransitionState::Noise(1)
             ]
         );
+    }
+
+    #[test]
+    fn nrzi_test_1() {
+        let input = [
+            TransitionState::Rising,
+            TransitionState::Hold(1),
+            TransitionState::Falling,
+            TransitionState::Hold(4),
+            TransitionState::Rising,
+            TransitionState::Hold(1),
+            TransitionState::Falling,
+            TransitionState::Hold(1),
+            TransitionState::Rising,
+            TransitionState::Hold(4),
+            TransitionState::Falling,
+            TransitionState::Rising,
+            TransitionState::Hold(2),
+            TransitionState::Falling,
+            TransitionState::Hold(4),
+            TransitionState::Rising,
+            TransitionState::Falling,
+            TransitionState::Rising,
+            TransitionState::Hold(1),
+            TransitionState::Falling,
+            TransitionState::Hold(3),
+            TransitionState::Rising,
+            TransitionState::Hold(2),
+            TransitionState::Falling,
+            TransitionState::Hold(4),
+            TransitionState::Noise(1),
+        ];
+
+        let result = NRZI::parse(&input, 4).unwrap();
+
+        assert_eq!("ABCD".as_bytes(), result.payload());
+        assert_eq!(result.frame_offset, 26);
     }
 }
