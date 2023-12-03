@@ -88,16 +88,16 @@ impl TransitionSearch {
         };
 
         if let Some((idx, _)) = search_result {
-            let transition_value = conv[idx + 1].abs();
-
             let sig_begin_offset = idx + 1;
+            let transition_value = conv[sig_begin_offset].abs();
+            let trainsitionless_windows = sig_begin_offset / p.window_width;
 
             Some(Self {
                 snr: transition_value.relative_to(noise_level),
                 ts: search_for,
                 sig_begin_offset,
                 mid_transition_window_offset: sig_begin_offset + p.half_window_width,
-                transitionless_windows: sig_begin_offset / p.window_width,
+                transitionless_windows: trainsitionless_windows,
                 noise_level: calculated_noise_level,
                 signals_len: signals.len(),
             })
@@ -262,7 +262,7 @@ impl TransitionDecoder {
     }
 
     pub fn parse(&mut self) {
-        while self.m.carrier_amplitudes.len() > self.c.transiton_searc_params.window_width {
+        while self.m.carrier_amplitudes.len() > self.hold_window_size() {
             match self.m.sm {
                 StateMachine::Searching => self.search(),
                 StateMachine::Synchronized(next_expected) => self.next_baud(next_expected),
@@ -270,12 +270,15 @@ impl TransitionDecoder {
         }
     }
 
+    fn hold_window_size(&self) -> usize {
+        self.c.transiton_searc_params.window_width * (self.c.max_transitionless_windows + 1)
+            + self.c.transiton_searc_params.transition_width
+            + 2
+    }
+
     fn next_baud(&mut self, search_for: TransitionState) {
         self.m.carrier_amplitudes.make_contiguous();
-        let hold_window_size = self.c.transiton_searc_params.window_width
-            * (self.c.max_transitionless_windows + 1)
-            + self.c.transiton_searc_params.transition_width
-            + 2;
+        let hold_window_size = self.hold_window_size();
 
         let hold_window = utils::begin_upper_limit_slice(
             self.m.carrier_amplitudes.as_slices().0,
@@ -307,6 +310,7 @@ impl TransitionDecoder {
                     self.m
                         .parse_traisition(TransitionState::Hold(self.c.max_transitionless_windows));
                     self.m.parse_traisition(TransitionState::Noise(1))
+                } else {
                 }
             },
         }
@@ -441,9 +445,16 @@ mod integration_test {
     }
 
     impl Params {
-        fn total_samples_count(&self, message_len: usize) -> SampleCount {
-            self.sampling_rate * (self.lead_in + self.lead_out)
-                + (self.sampling_rate * (self.baudrate.cycle_time().mul(2.0))) * message_len
+        fn total_samples_count_estimate(&self, message_len: usize) -> SampleCount {
+            let lead_in_out = self.lead_in + self.lead_out;
+            let content = self
+                .baudrate
+                .cycle_time()
+                .mul(8.0)
+                .mul(message_len as f32)
+                .mul(1.5);
+            let total = lead_in_out + content;
+            self.sampling_rate * total
         }
 
         fn lead_in_sample_count(&self) -> SampleCount {
@@ -464,8 +475,8 @@ mod integration_test {
     }
 
     fn create_signal_with_message(message: &str, p: &Params) -> (Vec<f32>, Vec<TransitionState>) {
-        let mut result = Vec::with_capacity(p.total_samples_count(message.len()).value());
-        result.resize(p.total_samples_count(message.len()).value(), 0.0);
+        let mut result = Vec::with_capacity(p.total_samples_count_estimate(message.len()).value());
+        result.resize(p.total_samples_count_estimate(message.len()).value(), 0.0);
 
         let carrier_signal = crate::sampling::WaveSampler::new(crate::waves::Sine::new(
             p.carrier_frequency,
@@ -560,7 +571,7 @@ mod integration_test {
             sampling_rate: SamplingRate::new(44100),
             carrier_amplitude: Amplitude::new(1.0),
             baudrate: Frequency::new(100.0),
-            transition_width: Proportion::new(0.25),
+            transition_width: Proportion::new(0.5),
             high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
             stuff_bit: 4,
         };
@@ -572,6 +583,16 @@ mod integration_test {
         decoder.process();
         decoder.parse();
 
-        assert_eq!(&decoder.m.transitions.as_slices().0, &reference);
+        for (idx, (result, gt)) in decoder
+            .m
+            .transitions
+            .as_slices()
+            .0
+            .iter()
+            .zip(reference.iter())
+            .enumerate()
+        {
+            assert_eq!(result, gt, "Issue at index: {}", idx);
+        }
     }
 }
