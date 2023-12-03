@@ -525,4 +525,53 @@ mod integration_test {
 
         assert_eq!(&decoder.m.transitions.as_slices().0, &reference);
     }
+    #[test]
+
+    fn integration_test_2() {
+        let p = Params {
+            lead_in: Time::new(0.005),
+            lead_out: Time::new(0.5),
+            carrier_frequency: Frequency::new(20000.0),
+            sampling_rate: SamplingRate::new(44100),
+            carrier_amplitude: Amplitude::new(1.0),
+            baudrate: Frequency::new(100.0),
+            transition_width: Proportion::new(0.25),
+            high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
+            stuff_bit: 4,
+        };
+
+        let (input, reference) = create_signal_with_message("1234", &p);
+        let mut decoder = TransitionDecoder::new(p.create_parameters());
+
+        decoder.append_samples(Samples(input.as_slice()));
+        decoder.process();
+        decoder.parse();
+
+        assert_eq!(&decoder.m.transitions.as_slices().0, &reference);
+    }
+
+    #[test]
+
+    fn integration_test_3() {
+        let p = Params {
+            lead_in: Time::new(0.005),
+            lead_out: Time::new(0.5),
+            carrier_frequency: Frequency::new(20000.0),
+            sampling_rate: SamplingRate::new(44100),
+            carrier_amplitude: Amplitude::new(1.0),
+            baudrate: Frequency::new(100.0),
+            transition_width: Proportion::new(0.25),
+            high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
+            stuff_bit: 4,
+        };
+
+        let (input, reference) = create_signal_with_message("Nagyon szeretlen angyalom! <3", &p);
+        let mut decoder = TransitionDecoder::new(p.create_parameters());
+
+        decoder.append_samples(Samples(input.as_slice()));
+        decoder.process();
+        decoder.parse();
+
+        assert_eq!(&decoder.m.transitions.as_slices().0, &reference);
+    }
 }
