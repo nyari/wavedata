@@ -356,7 +356,7 @@ impl TransitionDecoder {
             buffer.extend(samples.drain(0..samples_needed));
             let dft = self.m.fft.fft(Samples(&buffer), self.c.sampling_rate);
             self.m.carrier_amplitudes.push_back(
-                dft.absolute_amplitude_average_bwsteps_at(self.c.carrier_frequency, 0)
+                dft.absolute_amplitude_average_bwsteps_at(self.c.carrier_frequency, 1)
                     .unwrap(),
             )
         }
@@ -571,7 +571,7 @@ mod integration_test {
             sampling_rate: SamplingRate::new(44100),
             carrier_amplitude: Amplitude::new(1.0),
             baudrate: Frequency::new(100.0),
-            transition_width: Proportion::new(0.5),
+            transition_width: Proportion::new(0.25),
             high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
             stuff_bit: 4,
         };
