@@ -1,5 +1,6 @@
 use crate::units::{Amplitude, Time};
 
+pub mod am;
 pub mod dec;
 /// Amplitude modulated signals
 pub mod enc;
@@ -29,27 +30,19 @@ impl BinaryLevel {
         }
     }
 
-    fn transition(&self) -> TransitionState {
+    fn transition(&self) -> am::Transition {
         match self {
-            Self::High => TransitionState::Falling,
-            Self::Low => TransitionState::Rising,
+            Self::High => am::Transition::Falling,
+            Self::Low => am::Transition::Rising,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransitionState {
-    Rising,
-    Falling,
-    Hold(usize),
-    Noise(usize),
-}
-
-impl TransitionState {
+impl am::Transition {
     fn neg(self) -> Self {
         match self {
-            TransitionState::Rising => TransitionState::Falling,
-            TransitionState::Falling => TransitionState::Rising,
+            am::Transition::Rising => am::Transition::Falling,
+            am::Transition::Falling => am::Transition::Rising,
             _ => panic!("Non negatable transition state"),
         }
     }

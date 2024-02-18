@@ -130,19 +130,19 @@ impl Signal for NRZI {
 pub mod utils {
     use crate::{
         encodings::nrzi::Value,
-        signals::{BinaryLevel, TransitionState},
+        signals::{am::Transition, BinaryLevel},
     };
 
     pub fn nrzi_to_transition_states(
         input: &[Value],
         bit_stuffing: usize,
-    ) -> Result<Vec<TransitionState>, ()> {
+    ) -> Result<Vec<Transition>, ()> {
         let mut result = Vec::new();
         let mut level = BinaryLevel::Low;
         for value in input {
             level = match (level, value) {
                 (BinaryLevel::Low, Value::StartOfFrame) => {
-                    result.push(TransitionState::Rising);
+                    result.push(Transition::Rising);
                     Ok(BinaryLevel::High)
                 },
                 (level, Value::StuffBit) | (level, Value::Bit(true)) => {
@@ -150,23 +150,23 @@ pub mod utils {
                     Ok(level.neg())
                 },
                 (level, Value::Bit(false)) => {
-                    result.push(TransitionState::Hold(1));
+                    result.push(Transition::Hold(1));
                     Ok(level)
                 },
                 (BinaryLevel::Low, Value::EndOfFrame(0)) => {
-                    result.push(TransitionState::Rising);
+                    result.push(Transition::Rising);
                     Ok(BinaryLevel::High)
                 },
                 (BinaryLevel::High, Value::EndOfFrame(eof)) if *eof <= 1 => {
-                    result.push(TransitionState::Falling);
+                    result.push(Transition::Falling);
                     Ok(BinaryLevel::Low)
                 },
                 (BinaryLevel::Low, Value::EndOfFrame(_)) => {
-                    result.push(TransitionState::Hold(1));
+                    result.push(Transition::Hold(1));
                     Ok(BinaryLevel::Low)
                 },
                 (BinaryLevel::Low, Value::Complete) => {
-                    result.push(TransitionState::Noise(1));
+                    result.push(Transition::Noise(1));
                     break;
                 },
                 _ => Err(()),
@@ -176,20 +176,20 @@ pub mod utils {
         let mut result = result.into_iter().fold(Vec::new(), |mut acc, item| {
             if !acc.is_empty() {
                 let action = match (acc.last().unwrap(), item) {
-                    (TransitionState::Hold(prev), TransitionState::Hold(curr)) => {
-                        Some(TransitionState::Hold(prev + curr))
+                    (Transition::Hold(prev), Transition::Hold(curr)) => {
+                        Some(Transition::Hold(prev + curr))
                     },
-                    (TransitionState::Noise(prev), TransitionState::Noise(curr)) => {
-                        Some(TransitionState::Noise(prev + curr))
+                    (Transition::Noise(prev), Transition::Noise(curr)) => {
+                        Some(Transition::Noise(prev + curr))
                     },
                     _ => None,
                 };
 
                 match action {
                     Some(update) => match update {
-                        TransitionState::Hold(h) if h > bit_stuffing => {
-                            *acc.last_mut().unwrap() = TransitionState::Hold(4);
-                            acc.push(TransitionState::Noise(1))
+                        Transition::Hold(h) if h > bit_stuffing => {
+                            *acc.last_mut().unwrap() = Transition::Hold(4);
+                            acc.push(Transition::Noise(1))
                         },
                         val => *acc.last_mut().unwrap() = val,
                     },
@@ -203,8 +203,8 @@ pub mod utils {
             }
         });
 
-        if !matches!(result.last().unwrap(), TransitionState::Noise(_)) {
-            result.push(TransitionState::Noise(1));
+        if !matches!(result.last().unwrap(), Transition::Noise(_)) {
+            result.push(Transition::Noise(1));
         }
 
         Ok(result)

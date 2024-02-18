@@ -1,5 +1,5 @@
 pub mod nrzi {
-    use crate::{signals::TransitionState, utils::BitVec};
+    use crate::{signals::am::Transition, utils::BitVec};
 
     #[derive(Debug, Clone, Copy)]
     pub enum Error {
@@ -23,16 +23,16 @@ pub mod nrzi {
     }
 
     impl NRZI {
-        pub fn parse(frame: &[TransitionState], bit_stuffing: usize) -> Result<Self, Error> {
+        pub fn parse(frame: &[Transition], bit_stuffing: usize) -> Result<Self, Error> {
             let mut result = BitVec::new();
             let mut sm = NRZIState::Begin;
 
             for (idx, ts) in frame.iter().enumerate() {
                 sm = match (sm.clone(), ts) {
-                    (NRZIState::Begin, TransitionState::Noise(_)) => Ok(NRZIState::Begin),
-                    (NRZIState::Begin, TransitionState::Rising) => Ok(NRZIState::Bit(0)),
+                    (NRZIState::Begin, Transition::Noise(_)) => Ok(NRZIState::Begin),
+                    (NRZIState::Begin, Transition::Rising) => Ok(NRZIState::Bit(0)),
                     (NRZIState::Begin, _) => Err(Error::IncorrectStartOfFrame),
-                    (NRZIState::Bit(hold_count), TransitionState::Hold(hold_length)) => {
+                    (NRZIState::Bit(hold_count), Transition::Hold(hold_length)) => {
                         if *hold_length + hold_count <= bit_stuffing {
                             for _ in 0..*hold_length {
                                 result.push(false);
@@ -42,7 +42,7 @@ pub mod nrzi {
                             Err(Error::IncorrectBitStuffingInTransitions)
                         }
                     },
-                    (NRZIState::Bit(hold_count), TransitionState::Noise(_)) => {
+                    (NRZIState::Bit(hold_count), Transition::Noise(_)) => {
                         if hold_count >= bit_stuffing {
                             result.truncate_last_incomplete_byte();
 
@@ -80,35 +80,36 @@ pub mod nrzi {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::signals::am;
         #[test]
         fn nrzi_test_1() {
             let input = [
-                TransitionState::Rising,
-                TransitionState::Hold(1),
-                TransitionState::Falling,
-                TransitionState::Hold(4),
-                TransitionState::Rising,
-                TransitionState::Hold(1),
-                TransitionState::Falling,
-                TransitionState::Hold(1),
-                TransitionState::Rising,
-                TransitionState::Hold(4),
-                TransitionState::Falling,
-                TransitionState::Rising,
-                TransitionState::Hold(2),
-                TransitionState::Falling,
-                TransitionState::Hold(4),
-                TransitionState::Rising,
-                TransitionState::Falling,
-                TransitionState::Rising,
-                TransitionState::Hold(1),
-                TransitionState::Falling,
-                TransitionState::Hold(3),
-                TransitionState::Rising,
-                TransitionState::Hold(2),
-                TransitionState::Falling,
-                TransitionState::Hold(4),
-                TransitionState::Noise(1),
+                Transition::Rising,
+                Transition::Hold(1),
+                Transition::Falling,
+                Transition::Hold(4),
+                Transition::Rising,
+                Transition::Hold(1),
+                Transition::Falling,
+                Transition::Hold(1),
+                Transition::Rising,
+                Transition::Hold(4),
+                Transition::Falling,
+                Transition::Rising,
+                Transition::Hold(2),
+                Transition::Falling,
+                Transition::Hold(4),
+                Transition::Rising,
+                Transition::Falling,
+                Transition::Rising,
+                Transition::Hold(1),
+                Transition::Falling,
+                Transition::Hold(3),
+                Transition::Rising,
+                Transition::Hold(2),
+                Transition::Falling,
+                Transition::Hold(4),
+                Transition::Noise(1),
             ];
 
             let result = NRZI::parse(&input, 4).unwrap();

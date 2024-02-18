@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     sampling::{SampleCount, Samples, SamplingRate},
-    signals::{proc::FFT, TransitionState},
+    signals::{am::Transition, proc::FFT},
     units::{Amplitude, Frequency, Proportion},
     utils::{self, WindowedWeightedAverage},
 };
@@ -10,7 +10,7 @@ use crate::{
 #[derive(Clone, Copy)]
 enum StateMachine {
     Searching,
-    Synchronized(TransitionState),
+    Synchronized(Transition),
 }
 
 struct TransitionSearchParams {
@@ -41,7 +41,7 @@ impl TransitionSearchParams {
 
 struct TransitionSearch {
     snr: Proportion,
-    ts: TransitionState,
+    ts: Transition,
     sig_begin_offset: usize,
     mid_transition_window_offset: usize,
     transitionless_windows: usize,
@@ -61,7 +61,7 @@ impl TransitionSearch {
     pub fn search(
         p: &TransitionSearchParams,
         signals: &[Amplitude],
-        search_for: TransitionState,
+        search_for: Transition,
         ref_noise_level: Option<Amplitude>,
     ) -> Option<Self> {
         let conv = Self::conv(signals, &p.kernel);
@@ -77,10 +77,10 @@ impl TransitionSearch {
         let search_result = {
             let mut windows = conv.windows(3).enumerate();
             match search_for {
-                TransitionState::Rising => windows.find(|(_, win)| {
+                Transition::Rising => windows.find(|(_, win)| {
                     win[1].relative_to(noise_level) > p.min_snr && utils::nms(win)
                 }),
-                TransitionState::Falling => windows.find(|(_, win)| {
+                Transition::Falling => windows.find(|(_, win)| {
                     win[1].relative_to(noise_level) < p.min_snr.neg() && utils::nms(win)
                 }),
                 _ => panic!("Incorrect parameter on call"),
@@ -146,15 +146,15 @@ struct State {
     realtime_backlog: std::sync::Mutex<VecDeque<f32>>,
     backlog: std::sync::Mutex<VecDeque<f32>>,
     carrier_amplitudes: VecDeque<Amplitude>,
-    transitions: VecDeque<TransitionState>,
+    transitions: VecDeque<Transition>,
     noise_level: WindowedWeightedAverage<Amplitude>,
     sm: StateMachine,
     fft: FFT,
 }
 
 enum PushOp {
-    Push(TransitionState),
-    Mutate(TransitionState),
+    Push(Transition),
+    Mutate(Transition),
     Skip,
 }
 
@@ -174,18 +174,18 @@ impl State {
         }
     }
 
-    fn push_transition(&mut self, ts: TransitionState) -> TransitionState {
+    fn push_transition(&mut self, ts: Transition) -> Transition {
         let decision = match (self.transitions.back(), ts) {
-            (_, TransitionState::Noise(0)) => PushOp::Skip,
-            (_, TransitionState::Hold(0)) => PushOp::Skip,
+            (_, Transition::Noise(0)) => PushOp::Skip,
+            (_, Transition::Hold(0)) => PushOp::Skip,
             (None, ts) => PushOp::Push(ts),
-            (Some(TransitionState::Noise(pre)), TransitionState::Noise(post)) => {
-                PushOp::Mutate(TransitionState::Noise(pre + post))
+            (Some(Transition::Noise(pre)), Transition::Noise(post)) => {
+                PushOp::Mutate(Transition::Noise(pre + post))
             },
-            (Some(TransitionState::Hold(pre)), TransitionState::Hold(post)) => {
-                PushOp::Mutate(TransitionState::Hold(pre + post))
+            (Some(Transition::Hold(pre)), Transition::Hold(post)) => {
+                PushOp::Mutate(Transition::Hold(pre + post))
             },
-            (Some(a), b) if *a == b => PushOp::Push(TransitionState::Noise(1)),
+            (Some(a), b) if *a == b => PushOp::Push(Transition::Noise(1)),
             _ => PushOp::Push(ts),
         };
 
@@ -198,33 +198,33 @@ impl State {
         *self.transitions.back().unwrap()
     }
 
-    fn parse_traisition(&mut self, ts: TransitionState) {
+    fn parse_traisition(&mut self, ts: Transition) {
         self.sm = match (self.sm, ts) {
-            (StateMachine::Searching, TransitionState::Rising) => {
-                self.push_transition(TransitionState::Rising);
-                StateMachine::Synchronized(TransitionState::Falling)
+            (StateMachine::Searching, Transition::Rising) => {
+                self.push_transition(Transition::Rising);
+                StateMachine::Synchronized(Transition::Falling)
             },
-            (StateMachine::Searching, TransitionState::Noise(_)) => StateMachine::Searching,
+            (StateMachine::Searching, Transition::Noise(_)) => StateMachine::Searching,
             (StateMachine::Searching, _) => {
                 panic!("Incorrect internal state... Searching only accepts rising transition")
             },
-            (StateMachine::Synchronized(previous_expected), TransitionState::Hold(0)) => {
+            (StateMachine::Synchronized(previous_expected), Transition::Hold(0)) => {
                 StateMachine::Synchronized(previous_expected)
             },
             (StateMachine::Synchronized(previous_expected), change) => {
                 match self.push_transition(change) {
-                    TransitionState::Noise(_) => StateMachine::Searching,
-                    TransitionState::Hold(_) => StateMachine::Synchronized(previous_expected),
+                    Transition::Noise(_) => StateMachine::Searching,
+                    Transition::Hold(_) => StateMachine::Synchronized(previous_expected),
                     _ => StateMachine::Synchronized(previous_expected.neg()),
                 }
             },
         }
     }
 
-    fn last_transition(&self) -> TransitionState {
+    fn last_transition(&self) -> Transition {
         match self.transitions.back() {
             Some(ts) => *ts,
-            _ => TransitionState::Noise(0),
+            _ => Transition::Noise(0),
         }
     }
 
@@ -276,7 +276,7 @@ impl TransitionDecoder {
             + 2
     }
 
-    fn next_baud(&mut self, search_for: TransitionState) {
+    fn next_baud(&mut self, search_for: Transition) {
         self.m.carrier_amplitudes.make_contiguous();
         let hold_window_size = self.hold_window_size();
 
@@ -294,10 +294,10 @@ impl TransitionDecoder {
             Some(ts) => {
                 if ts.transitionless_windows <= self.c.max_transitionless_windows {
                     self.m
-                        .parse_traisition(TransitionState::Hold(ts.transitionless_windows));
+                        .parse_traisition(Transition::Hold(ts.transitionless_windows));
                     self.m.parse_traisition(ts.ts);
                 } else {
-                    self.m.parse_traisition(TransitionState::Noise(1));
+                    self.m.parse_traisition(Transition::Noise(1));
                 }
                 self.m
                     .drain_carrier_amplitudes(ts.mid_transition_window_offset);
@@ -308,8 +308,8 @@ impl TransitionDecoder {
             None => {
                 if hold_window.len() >= hold_window_size {
                     self.m
-                        .parse_traisition(TransitionState::Hold(self.c.max_transitionless_windows));
-                    self.m.parse_traisition(TransitionState::Noise(1))
+                        .parse_traisition(Transition::Hold(self.c.max_transitionless_windows));
+                    self.m.parse_traisition(Transition::Noise(1))
                 } else {
                 }
             },
@@ -323,14 +323,14 @@ impl TransitionDecoder {
             TransitionSearch::search(
                 &self.c.transiton_searc_params,
                 signals,
-                TransitionState::Rising,
+                Transition::Rising,
                 None,
             )
         };
 
         match ts {
-            Some(res) if res.ts == TransitionState::Rising => {
-                self.m.parse_traisition(TransitionState::Rising);
+            Some(res) if res.ts == Transition::Rising => {
+                self.m.parse_traisition(Transition::Rising);
                 self.m
                     .drain_carrier_amplitudes(res.mid_transition_window_offset);
                 self.m
@@ -475,7 +475,7 @@ mod integration_test {
         }
     }
 
-    fn create_signal_with_message(message: &str, p: &Params) -> (Vec<f32>, Vec<TransitionState>) {
+    fn create_signal_with_message(message: &str, p: &Params) -> (Vec<f32>, Vec<Transition>) {
         let mut result = Vec::with_capacity(p.total_samples_count_estimate(message.len()).value());
         result.resize(p.total_samples_count_estimate(message.len()).value(), 0.0);
 
