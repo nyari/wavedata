@@ -52,11 +52,11 @@ struct EnvelopeCalculation {
 }
 
 impl EnvelopeCalculation {
-    pub fn new(cycle_sample_count: SampleCount) -> Self {
+    pub fn new(carrier_wave_cycle: SampleCount) -> Self {
         Self {
             buffer: RefCell::new({
-                let mut result = Vec::with_capacity(cycle_sample_count.value());
-                result.resize(cycle_sample_count.value(), 0.0);
+                let mut result = Vec::with_capacity(carrier_wave_cycle.value());
+                result.resize(carrier_wave_cycle.value(), 0.0);
                 result
             }),
         }
