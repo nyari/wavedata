@@ -80,7 +80,6 @@ pub mod nrzi {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::signals::am;
         #[test]
         fn nrzi_test_1() {
             let input = [

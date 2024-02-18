@@ -106,7 +106,7 @@ impl NRZI {
 
     fn transition(&self) -> bool {
         match self.m.nrzi.current() {
-            Value::StartOfFrame | Value::StuffBit | Value::Bit(true) => true,
+            Value::StartOfFrame(_) | Value::StuffBit | Value::Bit(true) => true,
             Value::EndOfFrame(eofidx) => match (self.m.current_level, eofidx) {
                 (BinaryLevel::Low, 0) => true,
                 (BinaryLevel::Low, _) => false,
@@ -141,9 +141,13 @@ pub mod utils {
         let mut level = BinaryLevel::Low;
         for value in input {
             level = match (level, value) {
-                (BinaryLevel::Low, Value::StartOfFrame) => {
+                (BinaryLevel::Low, Value::StartOfFrame(value)) if value % 2 == 0 => {
                     result.push(Transition::Rising);
                     Ok(BinaryLevel::High)
+                },
+                (BinaryLevel::High, Value::StartOfFrame(value)) if value % 2 == 1 => {
+                    result.push(Transition::Falling);
+                    Ok(BinaryLevel::Low)
                 },
                 (level, Value::StuffBit) | (level, Value::Bit(true)) => {
                     result.push(level.transition());
@@ -223,7 +227,7 @@ mod tests {
                 Proportion::new(1.0),
                 (Amplitude::new(1.0), Amplitude::new(0.0)),
             ),
-            encodings::enc::nrzi::Parameters::new(vec![0b_0100_0010_u8], 4),
+            encodings::enc::nrzi::Parameters::new(vec![0b_0100_0010_u8], 4, 0),
         );
 
         assert_eq!(

@@ -488,6 +488,7 @@ mod integration_test {
         let nrzi_params = crate::encodings::enc::nrzi::Parameters::new(
             message.as_bytes().iter().map(|x| x.clone()).collect(),
             p.stuff_bit,
+            0,
         );
 
         let data_signal = crate::sampling::SignalSampler::new(crate::signals::enc::am::NRZI::new(

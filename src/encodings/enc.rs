@@ -3,7 +3,7 @@ pub mod nrzi {
 
     #[derive(Clone, Copy)]
     enum StateMachine {
-        Start,
+        BeginOfFrame,
         Payload,
         EndOfFrame,
         Complete,
@@ -13,13 +13,15 @@ pub mod nrzi {
     pub struct Parameters {
         payload: Vec<u8>, // Bytes
         stuff_bit_after: u8,
+        preamble: u8,
     }
 
     impl Parameters {
-        pub fn new(payload: Vec<u8>, stuff_bit_after: u8) -> Self {
+        pub fn new(payload: Vec<u8>, stuff_bit_after: u8, preamble: u8) -> Self {
             Self {
-                payload: payload,
-                stuff_bit_after: stuff_bit_after,
+                payload,
+                stuff_bit_after,
+                preamble,
             }
         }
     }
@@ -28,6 +30,7 @@ pub mod nrzi {
         payload_offset: usize,
         current_bit_offset: u8,
         contigous_zeros: u8,
+        preamble: u8,
         sm: StateMachine,
     }
 
@@ -37,7 +40,8 @@ pub mod nrzi {
                 payload_offset: 0,
                 current_bit_offset: 0,
                 contigous_zeros: 0,
-                sm: StateMachine::Start,
+                sm: StateMachine::BeginOfFrame,
+                preamble: 0,
             }
         }
     }
@@ -57,7 +61,7 @@ pub mod nrzi {
 
         pub fn current(&self) -> Value {
             match self.m.sm {
-                StateMachine::Start => Value::StartOfFrame,
+                StateMachine::BeginOfFrame => Value::StartOfFrame(self.m.preamble),
                 StateMachine::Payload => {
                     if !self.stuffing() {
                         Value::Bit(self.current_bit())
@@ -73,7 +77,14 @@ pub mod nrzi {
         pub fn advance(&mut self) {
             let sm = self.m.sm.clone();
             self.m.sm = match sm {
-                StateMachine::Start => StateMachine::Payload,
+                StateMachine::BeginOfFrame => {
+                    self.m.preamble += 1;
+                    if self.m.preamble < self.c.preamble {
+                        StateMachine::BeginOfFrame
+                    } else {
+                        StateMachine::Payload
+                    }
+                },
                 StateMachine::Payload => {
                     let last_bit = self.current_bit();
                     if !self.stuffing() {
@@ -152,11 +163,19 @@ pub mod nrzi {
             let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_0000_0000],
                 stuff_bit_after: 9,
+                preamble: 8,
             });
             assert_eq!(
                 nrzi.collect::<Vec<Value>>(),
                 vec![
-                    Value::StartOfFrame,
+                    Value::StartOfFrame(0),
+                    Value::StartOfFrame(1),
+                    Value::StartOfFrame(2),
+                    Value::StartOfFrame(3),
+                    Value::StartOfFrame(4),
+                    Value::StartOfFrame(5),
+                    Value::StartOfFrame(6),
+                    Value::StartOfFrame(7),
                     Value::Bit(false),
                     Value::Bit(false),
                     Value::Bit(false),
@@ -184,11 +203,15 @@ pub mod nrzi {
             let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_0000_0000],
                 stuff_bit_after: 4,
+                preamble: 4,
             });
             assert_eq!(
                 nrzi.collect::<Vec<Value>>(),
                 vec![
-                    Value::StartOfFrame,
+                    Value::StartOfFrame(0),
+                    Value::StartOfFrame(1),
+                    Value::StartOfFrame(2),
+                    Value::StartOfFrame(3),
                     Value::Bit(false),
                     Value::Bit(false),
                     Value::Bit(false),
@@ -213,11 +236,12 @@ pub mod nrzi {
             let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_0000_0000],
                 stuff_bit_after: 5,
+                preamble: 0,
             });
             assert_eq!(
                 nrzi.collect::<Vec<Value>>(),
                 vec![
-                    Value::StartOfFrame,
+                    Value::StartOfFrame(0),
                     Value::Bit(false),
                     Value::Bit(false),
                     Value::Bit(false),
@@ -243,11 +267,12 @@ pub mod nrzi {
             let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_1001_1000],
                 stuff_bit_after: 4,
+                preamble: 0,
             });
             assert_eq!(
                 nrzi.collect::<Vec<Value>>(),
                 vec![
-                    Value::StartOfFrame,
+                    Value::StartOfFrame(0),
                     Value::Bit(true),
                     Value::Bit(false),
                     Value::Bit(false),
@@ -271,11 +296,12 @@ pub mod nrzi {
             let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_1000_0100],
                 stuff_bit_after: 4,
+                preamble: 0,
             });
             assert_eq!(
                 nrzi.collect::<Vec<Value>>(),
                 vec![
-                    Value::StartOfFrame,
+                    Value::StartOfFrame(0),
                     Value::Bit(true),
                     Value::Bit(false),
                     Value::Bit(false),
@@ -300,11 +326,12 @@ pub mod nrzi {
             let nrzi = NRZI::new(Parameters {
                 payload: vec![0b_1001_1000, 0b_0010_0010],
                 stuff_bit_after: 4,
+                preamble: 0,
             });
             assert_eq!(
                 nrzi.collect::<Vec<Value>>(),
                 vec![
-                    Value::StartOfFrame,
+                    Value::StartOfFrame(0),
                     Value::Bit(true),
                     Value::Bit(false),
                     Value::Bit(false),

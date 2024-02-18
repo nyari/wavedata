@@ -4,7 +4,7 @@ pub mod enc;
 pub mod nrzi {
     #[derive(Debug, PartialEq)]
     pub enum Value {
-        StartOfFrame,
+        StartOfFrame(u8),
         Bit(bool),
         EndOfFrame(u8),
         StuffBit,
