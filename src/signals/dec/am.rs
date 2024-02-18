@@ -48,24 +48,24 @@ impl BandFilter {
 }
 
 struct EnvelopeCalculation {
-    buffer: RefCell<Vec<f32>>,
+    buffer: Vec<f32>,
 }
 
 impl EnvelopeCalculation {
     pub fn new(carrier_wave_cycle: SampleCount) -> Self {
         Self {
-            buffer: RefCell::new({
+            buffer: {
                 let mut result = Vec::with_capacity(carrier_wave_cycle.value());
                 result.resize(carrier_wave_cycle.value(), 0.0);
                 result
-            }),
+            },
         }
     }
 
-    pub fn process(&self, s: SamplesMut) {
+    pub fn process(&mut self, s: SamplesMut) {
         let samples = s.0;
-        let len = self.buffer.borrow().len();
-        let mut buffer = self.buffer.borrow_mut();
+        let len = self.buffer.len();
+        let mut buffer = &mut self.buffer;
         let samples_length = samples.len();
         buffer[len / 2..len]
             .iter_mut()
@@ -132,7 +132,7 @@ mod test {
 
     #[test]
     fn test_envelope_calculation_sawtooth() {
-        let calc = EnvelopeCalculation::new(SampleCount::new(4));
+        let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
         let mut buffer = [0.0f32, 1., 0., -1., 0., 1., 0., -1., 0.];
         calc.process(SamplesMut(&mut buffer));
         assert_eq!(buffer[0], 1.0);
@@ -148,7 +148,7 @@ mod test {
 
     #[test]
     fn test_envelope_calculation_falling_ramp() {
-        let calc = EnvelopeCalculation::new(SampleCount::new(4));
+        let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
         let mut buffer = [1.0f32, 1., 1., 1., 0.5, 0., 0., 0., 0.];
         calc.process(SamplesMut(&mut buffer));
         assert_eq!(buffer[0], 1.0);
