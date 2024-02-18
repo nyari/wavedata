@@ -1,11 +1,50 @@
-use std::collections::VecDeque;
+//! # Decode amplitude modulated signals
+//!
+//! ## Signal description
+//!
+use std::{collections::VecDeque, ops::Div};
+
+use num::complex::ComplexFloat;
 
 use crate::{
-    sampling::{SampleCount, Samples, SamplingRate},
+    sampling::{SampleCount, Samples, SamplesMut, SamplingRate},
     signals::{am::Transition, proc::FFT},
     units::{Amplitude, Frequency, Proportion},
     utils::{self, WindowedWeightedAverage},
 };
+
+struct BandFilter {
+    carrier_frequency: Frequency,
+    bandwidth: Frequency,
+    sr: SamplingRate,
+    fft: FFT,
+}
+
+impl BandFilter {
+    pub fn new(
+        carrier_frequency: Frequency,
+        baudrate: Frequency,
+        sr: SamplingRate,
+        transition_width: Proportion,
+    ) -> Self {
+        let bandwidth = baudrate / transition_width;
+        Self {
+            carrier_frequency,
+            bandwidth,
+            sr,
+            fft: FFT::new(),
+        }
+    }
+
+    pub fn filter(&self, s: SamplesMut) {
+        let mut dft = self.fft.fft(Samples(s.0), self.sr);
+        dft.filter_band(self.carrier_frequency, self.bandwidth);
+        let result = self.fft.fft_inverse(dft.as_mut_slice());
+        s.0.iter_mut()
+            .zip(result.into_iter())
+            .for_each(|(result, idft)| *result = idft.abs())
+    }
+}
 
 #[cfg(test)]
 mod integration_test {

@@ -1,3 +1,4 @@
+use core::slice::SlicePattern;
 use std::sync::{Arc, Mutex};
 
 use num::complex::ComplexFloat;
@@ -43,6 +44,14 @@ impl DFT {
         dft::step(self.frequency_steps(), self.max_frequency())
     }
 
+    pub fn as_slice<'a>(&'a self) -> &'a [Complex<f32>] {
+        self.dft.as_slice()
+    }
+
+    pub fn as_mut_slice<'a>(&'a mut self) -> &'a mut [Complex<f32>] {
+        self.dft.as_mut_slice()
+    }
+
     pub fn band<'a>(
         &'a self,
         freq: Frequency,
@@ -53,11 +62,7 @@ impl DFT {
         self.band_steps(freq, steps)
     }
 
-    pub fn band_steps<'a>(
-        &'a self,
-        freq: Frequency,
-        steps: usize,
-    ) -> Result<&'a [Complex<f32>], Error> {
+    pub fn band_step_bounds(&self, freq: Frequency, steps: usize) -> Result<(usize, usize), Error> {
         let step = self.step();
         let item = (freq / step).round() as usize;
         if item < self.frequency_steps() {
@@ -65,10 +70,30 @@ impl DFT {
             let lower_bound = if item >= radius { item - radius } else { 0 };
             let upper_bound = std::cmp::min(item + radius + 1, self.frequency_steps());
 
-            Ok(&self.dft[lower_bound..upper_bound])
+            Ok((lower_bound, upper_bound))
         } else {
             Err(Error::FrequencyOutOfBounds)
         }
+    }
+
+    pub fn band_steps<'a>(
+        &'a self,
+        freq: Frequency,
+        steps: usize,
+    ) -> Result<&'a [Complex<f32>], Error> {
+        self.band_step_bounds(freq, steps)
+            .map(|(lower, upper)| &self.dft[lower..upper])
+    }
+
+    pub fn filter_band(&mut self, freq: Frequency, bandwidth: Frequency) -> Result<(), Error> {
+        let step = self.step();
+        let steps = bandwidth.bandwidth_steps(step);
+        let (lower, upper) = self.band_step_bounds(freq, steps)?;
+        let len = self.dft.len();
+        self.dft[0..lower].fill(Complex::zero());
+        self.dft[upper..(len - upper)].fill(Complex::zero());
+        self.dft[(len - lower)..len].fill(Complex::zero());
+        Ok(())
     }
 
     pub fn band_average_amplitude<'a>(&'a self, band: &'a [Complex<f32>]) -> Amplitude {
@@ -99,12 +124,14 @@ impl DFT {
 
 pub struct FFT {
     ffts: Mutex<std::collections::HashMap<usize, Arc<dyn rustfft::Fft<f32>>>>,
+    iffts: Mutex<std::collections::HashMap<usize, Arc<dyn rustfft::Fft<f32>>>>,
 }
 
 impl FFT {
     pub fn new() -> Self {
         Self {
             ffts: Mutex::new(std::collections::HashMap::new()),
+            iffts: Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -126,8 +153,14 @@ impl FFT {
         DFT::new(output, rate)
     }
 
-    pub fn fft_inverse(&self, _: &[Complex<f32>]) -> Box<[Complex<f32>]> {
-        todo!()
+    pub fn fft_inverse(&self, input: &mut [Complex<f32>]) -> Vec<Complex<f32>> {
+        let ifft: Arc<dyn Fft<f32>> = self.getifft(input.len());
+        let mut output = Vec::with_capacity(input.len());
+        output.resize(input.len(), Complex::new(0.0, 0.0));
+        let mut scratch = Vec::with_capacity(ifft.get_outofplace_scratch_len());
+        scratch.resize(ifft.get_outofplace_scratch_len(), Complex::zero());
+        ifft.process_outofplace_with_scratch(input, output.as_mut_slice(), scratch.as_mut_slice());
+        output
     }
 
     fn getfft(&self, len: usize) -> Arc<dyn rustfft::Fft<f32>> {
@@ -137,9 +170,23 @@ impl FFT {
             Some(value) => value.clone(),
             None => {
                 let mut planner = rustfft::FftPlanner::new();
-                let instance = planner.plan_fft_forward(len);
-                ffts.insert(len, instance.clone());
-                instance
+                let forward = planner.plan_fft_forward(len);
+                ffts.insert(len, forward.clone());
+                forward
+            },
+        }
+    }
+
+    fn getifft(&self, len: usize) -> Arc<dyn rustfft::Fft<f32>> {
+        let mut iffts = self.iffts.lock().unwrap();
+        let result = iffts.get(&len);
+        match result {
+            Some(value) => value.clone(),
+            None => {
+                let mut planner = rustfft::FftPlanner::new();
+                let forward = planner.plan_fft_inverse(len);
+                iffts.insert(len, forward.clone());
+                forward
             },
         }
     }

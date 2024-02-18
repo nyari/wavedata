@@ -126,6 +126,13 @@ impl std::ops::Div<SampleCount> for Frequency {
     }
 }
 
+impl std::ops::Div<Proportion> for Frequency {
+    type Output = Frequency;
+    fn div(self, rhs: Proportion) -> Self::Output {
+        Self(self.0 / (rhs.value()))
+    }
+}
+
 /// Maximum amplitude of a signal
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub struct Amplitude(f32);
