@@ -2,7 +2,7 @@
 //!
 //! ## Signal description
 //!
-use std::{collections::VecDeque, ops::Div};
+use std::{cell::RefCell, collections::VecDeque, ops::Div};
 
 use num::complex::ComplexFloat;
 
@@ -43,6 +43,122 @@ impl BandFilter {
         s.0.iter_mut()
             .zip(result.into_iter())
             .for_each(|(result, idft)| *result = idft.abs())
+    }
+}
+
+struct EnvelopeCalculation {
+    buffer: RefCell<Vec<f32>>,
+}
+
+impl EnvelopeCalculation {
+    pub fn new(cycle_sample_count: SampleCount) -> Self {
+        Self {
+            buffer: RefCell::new({
+                let mut result = Vec::with_capacity(cycle_sample_count.value());
+                result.resize(cycle_sample_count.value(), 0.0);
+                result
+            }),
+        }
+    }
+
+    pub fn process(&self, s: SamplesMut) {
+        let samples = s.0;
+        let len = self.buffer.borrow().len();
+        let mut buffer = self.buffer.borrow_mut();
+        let samples_length = samples.len();
+        buffer[len / 2..len]
+            .iter_mut()
+            .zip(samples.iter())
+            .for_each(|(b, s)| *b = *s);
+        let mut max = buffer
+            .iter()
+            .map(|v| v.clone())
+            .enumerate()
+            .max_by(|lhs, rhs| lhs.1.partial_cmp(&rhs.1).unwrap())
+            .unwrap();
+
+        let start_samples_idx = len - len / 2;
+        let mut buffer_rolling_idx = 0;
+        for samples_idx in start_samples_idx..samples_length + start_samples_idx {
+            buffer[buffer_rolling_idx] = if samples_idx < samples_length {
+                samples[samples_idx]
+            } else {
+                0.0
+            };
+            if max.0 == buffer_rolling_idx {
+                max = buffer
+                    .iter()
+                    .map(|v| v.clone())
+                    .enumerate()
+                    .max_by(|lhs, rhs| lhs.1.partial_cmp(&rhs.1).unwrap())
+                    .unwrap();
+            }
+            if buffer[buffer_rolling_idx] > max.1 {
+                max = (buffer_rolling_idx, samples[samples_idx]);
+            }
+            samples[samples_idx - start_samples_idx] = max.1;
+            buffer_rolling_idx += 1;
+            if buffer_rolling_idx >= len {
+                buffer_rolling_idx = 0;
+            }
+        }
+
+        buffer.fill(0.0);
+    }
+}
+
+struct TransitionSearch {
+    transition_offset: usize,
+    signal_strength: f32,
+}
+
+impl TransitionSearch {
+    pub fn full_search(
+        s: Samples,
+        transition_width: SampleCount,
+        baud_width: SampleCount,
+        min_snr: f32,
+        transition: Transition,
+    ) -> Self {
+        let samples = s.0;
+        todo!()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_envelope_calculation_sawtooth() {
+        let calc = EnvelopeCalculation::new(SampleCount::new(4));
+        let mut buffer = [0.0f32, 1., 0., -1., 0., 1., 0., -1., 0.];
+        calc.process(SamplesMut(&mut buffer));
+        assert_eq!(buffer[0], 1.0);
+        assert_eq!(buffer[1], 1.0);
+        assert_eq!(buffer[2], 1.0);
+        assert_eq!(buffer[3], 1.0);
+        assert_eq!(buffer[4], 1.0);
+        assert_eq!(buffer[5], 1.0);
+        assert_eq!(buffer[6], 1.0);
+        assert_eq!(buffer[7], 0.0);
+        assert_eq!(buffer[8], 0.0);
+    }
+
+    #[test]
+    fn test_envelope_calculation_falling_ramp() {
+        let calc = EnvelopeCalculation::new(SampleCount::new(4));
+        let mut buffer = [1.0f32, 1., 1., 1., 0.5, 0., 0., 0., 0.];
+        calc.process(SamplesMut(&mut buffer));
+        assert_eq!(buffer[0], 1.0);
+        assert_eq!(buffer[1], 1.0);
+        assert_eq!(buffer[2], 1.0);
+        assert_eq!(buffer[3], 1.0);
+        assert_eq!(buffer[4], 1.0);
+        assert_eq!(buffer[5], 0.5);
+        assert_eq!(buffer[6], 0.0);
+        assert_eq!(buffer[7], 0.0);
+        assert_eq!(buffer[8], 0.0);
     }
 }
 

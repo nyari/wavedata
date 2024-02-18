@@ -1,4 +1,3 @@
-use core::slice::SlicePattern;
 use std::sync::{Arc, Mutex};
 
 use num::complex::ComplexFloat;
