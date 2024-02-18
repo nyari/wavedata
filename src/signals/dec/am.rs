@@ -62,7 +62,7 @@ impl EnvelopeCalculation {
         }
     }
 
-    pub fn process(&mut self, s: SamplesMut) {
+    pub fn process_padded(&mut self, s: SamplesMut) {
         let samples = s.0;
         let len = self.buffer.len();
         let mut buffer = &mut self.buffer;
@@ -93,8 +93,42 @@ impl EnvelopeCalculation {
                     .enumerate()
                     .max_by(|lhs, rhs| lhs.1.partial_cmp(&rhs.1).unwrap())
                     .unwrap();
+            } else if buffer[buffer_rolling_idx] > max.1 {
+                max = (buffer_rolling_idx, samples[samples_idx]);
             }
-            if buffer[buffer_rolling_idx] > max.1 {
+            samples[samples_idx - start_samples_idx] = max.1;
+            buffer_rolling_idx += 1;
+            if buffer_rolling_idx >= len {
+                buffer_rolling_idx = 0;
+            }
+        }
+
+        buffer.fill(0.0);
+    }
+
+    pub fn process(&mut self, s: SamplesMut) {
+        let samples = s.0;
+        let len = self.buffer.len();
+        let mut buffer = &mut self.buffer;
+        let samples_length = samples.len();
+        buffer
+            .iter_mut()
+            .zip(samples.iter())
+            .for_each(|(b, s)| *b = *s);
+        let mut max = (0, 0.0f32);
+
+        let start_samples_idx = len / 2;
+        let mut buffer_rolling_idx = 0;
+        for samples_idx in len..samples_length {
+            buffer[buffer_rolling_idx] = samples[samples_idx];
+            if max.0 == buffer_rolling_idx {
+                max = buffer
+                    .iter()
+                    .map(|v| v.clone())
+                    .enumerate()
+                    .max_by(|lhs, rhs| lhs.1.partial_cmp(&rhs.1).unwrap())
+                    .unwrap();
+            } else if buffer[buffer_rolling_idx] > max.1 {
                 max = (buffer_rolling_idx, samples[samples_idx]);
             }
             samples[samples_idx - start_samples_idx] = max.1;
@@ -134,7 +168,7 @@ mod test {
     fn test_envelope_calculation_sawtooth() {
         let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
         let mut buffer = [0.0f32, 1., 0., -1., 0., 1., 0., -1., 0.];
-        calc.process(SamplesMut(&mut buffer));
+        calc.process_padded(SamplesMut(&mut buffer));
         assert_eq!(buffer[0], 1.0);
         assert_eq!(buffer[1], 1.0);
         assert_eq!(buffer[2], 1.0);
