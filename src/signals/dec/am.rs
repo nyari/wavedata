@@ -38,7 +38,8 @@ impl BandFilter {
 
     pub fn filter(&self, s: SamplesMut) {
         let mut dft = self.fft.fft(Samples(s.0), self.sr);
-        dft.filter_band(self.carrier_frequency, self.bandwidth);
+        dft.filter_band(self.carrier_frequency, self.bandwidth)
+            .unwrap();
         let result = self.fft.fft_inverse(dft.as_mut_slice());
         s.0.iter_mut()
             .zip(result.into_iter())
