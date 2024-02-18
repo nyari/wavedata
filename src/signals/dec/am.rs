@@ -441,6 +441,7 @@ mod integration_test {
         baudrate: Frequency,
         transition_width: Proportion,
         high_low: (Amplitude, Amplitude),
+        transition_window_divisor: usize,
         stuff_bit: u8,
     }
 
@@ -468,7 +469,7 @@ mod integration_test {
                 self.transition_width,
                 self.stuff_bit as usize,
                 self.sampling_rate,
-                8,
+                self.transition_window_divisor,
                 Proportion::new(5.0),
             )
         }
@@ -524,6 +525,7 @@ mod integration_test {
             baudrate: Frequency::new(100.0),
             transition_width: Proportion::new(0.25),
             high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
+            transition_window_divisor: 8,
             stuff_bit: 4,
         };
 
@@ -548,6 +550,7 @@ mod integration_test {
             baudrate: Frequency::new(100.0),
             transition_width: Proportion::new(0.25),
             high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
+            transition_window_divisor: 8,
             stuff_bit: 4,
         };
 
@@ -573,10 +576,50 @@ mod integration_test {
             baudrate: Frequency::new(100.0),
             transition_width: Proportion::new(0.25),
             high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
+            transition_window_divisor: 8,
             stuff_bit: 4,
         };
 
-        let (input, reference) = create_signal_with_message("Nagyon szeretlen angyalom! <3", &p);
+        let (input, reference) =
+            create_signal_with_message("Nagyon-nagyon szeretlen angyalom! <3", &p);
+        let mut decoder = TransitionDecoder::new(p.create_parameters());
+
+        decoder.append_samples(Samples(input.as_slice()));
+        decoder.process();
+        decoder.parse();
+
+        for (idx, (result, gt)) in decoder
+            .m
+            .transitions
+            .as_slices()
+            .0
+            .iter()
+            .zip(reference.iter())
+            .enumerate()
+        {
+            assert_eq!(result, gt, "Issue at index: {}", idx);
+        }
+    }
+
+    #[test]
+    fn integration_test_4() {
+        let p = Params {
+            lead_in: Time::new(0.005),
+            lead_out: Time::new(0.5),
+            carrier_frequency: Frequency::new(20000.0),
+            sampling_rate: SamplingRate::new(44100),
+            carrier_amplitude: Amplitude::new(1.0),
+            baudrate: Frequency::new(100.0),
+            transition_width: Proportion::new(0.25),
+            high_low: (Amplitude::new(1.0), Amplitude::new(0.0)),
+            transition_window_divisor: 8,
+            stuff_bit: 4,
+        };
+
+        let (input, reference) = create_signal_with_message(
+            "How to define a string where this breaks for sure? Lets make it longer. Okay this is not as bad as I remember. Why are you not breaking? :D",
+            &p,
+        );
         let mut decoder = TransitionDecoder::new(p.create_parameters());
 
         decoder.append_samples(Samples(input.as_slice()));

@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 rustfft = "6.1.*"
 num = "0.4.*"
+
+[profile.test]
+opt-level = 0
