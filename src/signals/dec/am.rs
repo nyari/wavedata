@@ -48,24 +48,20 @@ impl BandFilter {
 }
 
 struct EnvelopeCalculation {
-    buffer: Vec<f32>,
+    buffer_size: usize,
 }
 
 impl EnvelopeCalculation {
     pub fn new(carrier_wave_cycle: SampleCount) -> Self {
         Self {
-            buffer: {
-                let mut result = Vec::with_capacity(carrier_wave_cycle.value());
-                result.resize(carrier_wave_cycle.value(), 0.0);
-                result
-            },
+            buffer_size: carrier_wave_cycle.value(),
         }
     }
 
     pub fn process_padded(&mut self, s: SamplesMut) {
         let samples = s.0;
-        let len = self.buffer.len();
-        let mut buffer = &mut self.buffer;
+        let len = self.buffer_size;
+        let mut buffer = vec![0.0; len];
         let samples_length = samples.len();
         buffer[len / 2..len]
             .iter_mut()
@@ -108,8 +104,8 @@ impl EnvelopeCalculation {
 
     pub fn process(&mut self, s: SamplesMut) {
         let samples = s.0;
-        let len = self.buffer.len();
-        let mut buffer = &mut self.buffer;
+        let len = self.buffer_size;
+        let mut buffer = vec![0.0; len];
         let samples_length = samples.len();
         buffer
             .iter_mut()
@@ -148,15 +144,42 @@ struct TransitionSearch {
 }
 
 impl TransitionSearch {
-    pub fn full_search(
+    pub fn search_rising(
         s: Samples,
         transition_width: SampleCount,
-        baud_width: SampleCount,
-        min_snr: f32,
-        transition: Transition,
-    ) -> Self {
+        min_signal_level: f32,
+    ) -> Option<Self> {
         let samples = s.0;
-        todo!()
+
+        let tw = transition_width.value();
+
+        let mid_transition = samples
+            .windows(tw)
+            .map(|window| window.last().unwrap() - window.first().unwrap())
+            .enumerate()
+            .fold(None, |acc, (idx, signal)| {
+                if let Some((first_idx, max_idx, old_signal)) = acc {
+                    if idx - first_idx < tw && signal > old_signal {
+                        Some((first_idx, idx, signal))
+                    } else {
+                        Some((first_idx, max_idx, old_signal))
+                    }
+                } else {
+                    if signal > min_signal_level {
+                        Some((idx, idx, signal))
+                    } else {
+                        None
+                    }
+                }
+            });
+
+        match mid_transition {
+            Some((_, idx, signal)) => Some(Self {
+                transition_offset: idx,
+                signal_strength: signal,
+            }),
+            None => None,
+        }
     }
 }
 
@@ -241,8 +264,7 @@ mod integration_test {
     }
 
     fn create_signal_with_message(message: &str, p: &Params) -> (Vec<f32>, Vec<Transition>) {
-        let mut result = Vec::with_capacity(p.total_samples_count_estimate(message.len()).value());
-        result.resize(p.total_samples_count_estimate(message.len()).value(), 0.0);
+        let mut result = vec![0; p.total_samples_count_estimate(message.len()).value()];
 
         let carrier_signal = crate::sampling::WaveSampler::new(crate::waves::Sine::new(
             p.carrier_frequency,

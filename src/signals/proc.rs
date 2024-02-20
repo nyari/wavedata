@@ -154,10 +154,8 @@ impl FFT {
 
     pub fn fft_inverse(&self, input: &mut [Complex<f32>]) -> Vec<Complex<f32>> {
         let ifft: Arc<dyn Fft<f32>> = self.getifft(input.len());
-        let mut output = Vec::with_capacity(input.len());
-        output.resize(input.len(), Complex::new(0.0, 0.0));
-        let mut scratch = Vec::with_capacity(ifft.get_outofplace_scratch_len());
-        scratch.resize(ifft.get_outofplace_scratch_len(), Complex::zero());
+        let mut output = vec![Complex::zero(); input.len()];
+        let mut scratch = vec![Complex::zero(); ifft.get_outofplace_scratch_len()];
         ifft.process_outofplace_with_scratch(input, output.as_mut_slice(), scratch.as_mut_slice());
         output
     }
