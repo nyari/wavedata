@@ -198,31 +198,31 @@ mod test {
         let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
         let mut buffer = [0.0f32, 1., 0., -1., 0., 1., 0., -1., 0.];
         calc.process_padded(SamplesMut(&mut buffer));
-        assert_eq!(buffer[0], 1.0);
-        assert_eq!(buffer[1], 1.0);
-        assert_eq!(buffer[2], 1.0);
-        assert_eq!(buffer[3], 1.0);
-        assert_eq!(buffer[4], 1.0);
-        assert_eq!(buffer[5], 1.0);
-        assert_eq!(buffer[6], 1.0);
-        assert_eq!(buffer[7], 0.0);
-        assert_eq!(buffer[8], 0.0);
+        assert_eq!(buffer, [1.0f32, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0]);
     }
 
     #[test]
     fn test_envelope_calculation_falling_ramp() {
         let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
         let mut buffer = [1.0f32, 1., 1., 1., 0.5, 0., 0., 0., 0.];
+        calc.process_padded(SamplesMut(&mut buffer));
+        assert_eq!(buffer, [1.0f32, 1.0, 1.0, 1.0, 1.0, 0.5, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_envelope_calculation_sawtooth_no_padding() {
+        let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
+        let mut buffer = [0.0f32, 1., 0., -1., 0., 1., 0., -1., 0.];
         calc.process(SamplesMut(&mut buffer));
-        assert_eq!(buffer[0], 1.0);
-        assert_eq!(buffer[1], 1.0);
-        assert_eq!(buffer[2], 1.0);
-        assert_eq!(buffer[3], 1.0);
-        assert_eq!(buffer[4], 1.0);
-        assert_eq!(buffer[5], 0.5);
-        assert_eq!(buffer[6], 0.0);
-        assert_eq!(buffer[7], 0.0);
-        assert_eq!(buffer[8], 0.0);
+        assert_eq!(buffer, [0.0f32, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 0.0]);
+    }
+
+    #[test]
+    fn test_envelope_calculation_falling_ramp_no_padding() {
+        let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
+        let mut buffer = [1.0f32, 1., 1., 1., 0.5, 0., 0., 0., 0.];
+        calc.process(SamplesMut(&mut buffer));
+        assert_eq!(buffer, [1.0f32, 1.0, 1.0, 1.0, 1.0, 0.5, 0.0, 0.0, 0.0]);
     }
 
     #[test]
