@@ -138,12 +138,13 @@ impl EnvelopeCalculation {
     }
 }
 
-struct TransitionSearch {
+struct StartOfFrameSearch {
     transition_offset: usize,
     signal_strength: f32,
+    noise_level: f32,
 }
 
-impl TransitionSearch {
+impl StartOfFrameSearch {
     pub fn search_rising(
         s: Samples,
         transition_width: SampleCount,
@@ -151,7 +152,7 @@ impl TransitionSearch {
     ) -> Option<Self> {
         let samples = s.0;
 
-        let tw = transition_width.value();
+        let tw = transition_width.value() + 1;
 
         let mid_transition = samples
             .windows(tw)
@@ -174,10 +175,15 @@ impl TransitionSearch {
             });
 
         match mid_transition {
-            Some((_, idx, signal)) => Some(Self {
-                transition_offset: idx,
-                signal_strength: signal,
-            }),
+            Some((_, idx, signal)) => {
+                let sum: f32 = samples[..idx].iter().sum();
+
+                Some(Self {
+                    transition_offset: idx,
+                    signal_strength: signal,
+                    noise_level: sum / (idx as f32),
+                })
+            },
             None => None,
         }
     }
@@ -217,6 +223,36 @@ mod test {
         assert_eq!(buffer[6], 0.0);
         assert_eq!(buffer[7], 0.0);
         assert_eq!(buffer[8], 0.0);
+    }
+
+    #[test]
+    fn start_of_frame_search_ramp_0_to_1_on_length_4() {
+        let buffer = [0.0f32, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0];
+        let result =
+            StartOfFrameSearch::search_rising(Samples(&buffer), SampleCount::new(4), 0.5).unwrap();
+
+        assert_eq!(result.transition_offset, 2);
+        assert_eq!(result.signal_strength, 1.0);
+        assert_eq!(result.noise_level, 0.0);
+    }
+
+    #[test]
+    fn start_of_frame_search_ramp_0_to_1_on_length_4_under_signal_level() {
+        let buffer = [0.0f32, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0];
+        let result = StartOfFrameSearch::search_rising(Samples(&buffer), SampleCount::new(4), 2.0);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn start_of_frame_search_non_monotonous_ramp_0_to_1_on_length_6() {
+        let buffer = [0.0f32, 0.0, 0.0, 0.25, 0.5, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0];
+        let result =
+            StartOfFrameSearch::search_rising(Samples(&buffer), SampleCount::new(6), 0.5).unwrap();
+
+        assert_eq!(result.transition_offset, 2);
+        assert_eq!(result.signal_strength, 1.0);
+        assert_eq!(result.noise_level, 0.0);
     }
 }
 
@@ -264,7 +300,7 @@ mod integration_test {
     }
 
     fn create_signal_with_message(message: &str, p: &Params) -> (Vec<f32>, Vec<Transition>) {
-        let mut result = vec![0; p.total_samples_count_estimate(message.len()).value()];
+        let mut result = vec![0.0f32; p.total_samples_count_estimate(message.len()).value()];
 
         let carrier_signal = crate::sampling::WaveSampler::new(crate::waves::Sine::new(
             p.carrier_frequency,
