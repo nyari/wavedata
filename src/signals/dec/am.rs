@@ -2,9 +2,9 @@
 //!
 //! ## Signal description
 //!
-use std::{cell::RefCell, collections::VecDeque, ops::Div};
+use std::{cell::RefCell, collections::VecDeque, ops::Div, path::Ancestors};
 
-use num::complex::ComplexFloat;
+use num::{bigint::Sign, complex::ComplexFloat};
 
 use crate::{
     sampling::{SampleCount, Samples, SamplesMut, SamplingRate},
@@ -58,6 +58,13 @@ impl EnvelopeCalculation {
         }
     }
 
+    pub fn tail_lengths(&self) -> (usize, usize) {
+        let remainder = self.buffer_size % 2;
+        let half = self.buffer_size / 2;
+
+        (half, half + remainder)
+    }
+
     pub fn process_padded(&mut self, s: SamplesMut) {
         let samples = s.0;
         let len = self.buffer_size;
@@ -98,8 +105,6 @@ impl EnvelopeCalculation {
                 buffer_rolling_idx = 0;
             }
         }
-
-        buffer.fill(0.0);
     }
 
     pub fn process(&mut self, s: SamplesMut) {
@@ -133,8 +138,6 @@ impl EnvelopeCalculation {
                 buffer_rolling_idx = 0;
             }
         }
-
-        buffer.fill(0.0);
     }
 }
 
@@ -186,6 +189,72 @@ impl StartOfFrameSearch {
             },
             None => None,
         }
+    }
+}
+
+struct SignalWindows<'a> {
+    samples: &'a [f32],
+    window_width: usize,
+    window: usize,
+}
+
+impl<'a> SignalWindows<'a> {
+    pub fn new(samples: &'a [f32], window_width: usize) -> Self {
+        Self {
+            samples,
+            window_width,
+            window: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for SignalWindows<'a> {
+    type Item = &'a [f32];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let beg = self.window * self.window_width;
+        let end = beg + self.window_width;
+
+        if end < self.samples.len() {
+            Some(&self.samples[beg..end])
+        } else {
+            None
+        }
+    }
+}
+
+struct NextTransitionSearch {
+    hold_length: usize,
+    signal_level: Amplitude,
+    noise_level: Amplitude,
+    sync_offset: isize,
+}
+
+impl NextTransitionSearch {
+    pub fn search(
+        s: Samples,
+        window_width: SampleCount,
+        transition_width: SampleCount,
+        transition_type: Transition,
+        max_hold_length: usize,
+        min_signal_level: Amplitude,
+    ) -> Option<Self> {
+        let samples = s.0;
+        let window = window_width.value();
+        let transition = transition_width.value();
+        let dtm: (f32, f32) = match transition_type {
+            Transition::Rising => (-1.0, 1.0),
+            Transition::Falling => (1.0, -1.0),
+            _ => panic!("This is an incorrect case"),
+        };
+
+        let mut hold_length = 0;
+
+        let result = SignalWindows::new(samples, window)
+            .enumerate()
+            .take(max_hold_length);
+
+        todo!()
     }
 }
 
@@ -277,7 +346,6 @@ mod integration_test {
         baudrate: Frequency,
         transition_width: Proportion,
         high_low: (Amplitude, Amplitude),
-        transition_window_divisor: usize,
         stuff_bit: u8,
     }
 
