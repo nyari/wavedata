@@ -10,8 +10,132 @@ use crate::{
     sampling::{SampleCount, Samples, SamplesMut, SamplingRate},
     signals::{am::Transition, proc::FFT},
     units::{Amplitude, Frequency, Proportion},
-    utils::{self, WindowedWeightedAverage},
+    utils::{self, Interval, WindowedWeightedAverage},
 };
+
+#[derive(Debug)]
+enum SWError {
+    NotEnoughSamples,
+}
+
+struct SignalWindow<'a> {
+    samples: Samples<'a>,
+    window: SampleCount,
+    offset: SampleCount,
+}
+
+impl<'a> SignalWindow<'a> {
+    pub fn new(s: Samples<'a>, window: SampleCount) -> Result<Self, SWError> {
+        if window.value() <= s.0.len() && !s.0.is_empty() {
+            Ok(Self {
+                samples: s,
+                window,
+                offset: SampleCount::new(0),
+            })
+        } else {
+            Err(SWError::NotEnoughSamples)
+        }
+    }
+
+    pub fn end(&self) -> SampleCount {
+        self.offset + self.window
+    }
+
+    pub fn begin(&self) -> SampleCount {
+        self.offset
+    }
+
+    pub fn interval(&self) -> Interval<usize> {
+        Interval::new(self.begin().value(), self.end().value())
+    }
+
+    pub fn delta(&self) -> f32 {
+        let slice = self.slice();
+        slice.0.last().unwrap() - slice.0.first().unwrap()
+    }
+
+    pub fn slice(&self) -> Samples<'a> {
+        Samples(&self.samples.0[self.offset.value()..self.offset.value() + self.window.value()])
+    }
+
+    pub fn middle_index(&self) -> usize {
+        self.offset.value() + self.window.value() / 2
+    }
+
+    pub fn middle_window(&self, samples: SampleCount) -> Result<Self, SWError> {
+        let half = samples.value() / 2;
+        let middle = self.middle_index();
+        if middle >= half {
+            let beg = middle - half;
+            Ok(Self {
+                samples: Samples(&self.samples.0[beg..beg + samples.value()]),
+                window: samples,
+                offset: SampleCount::new(0),
+            })
+        } else {
+            Err(SWError::NotEnoughSamples)
+        }
+    }
+
+    pub fn offset(self, offset: isize) -> Result<Self, SWError> {
+        let old_offset = isize::try_from(self.offset.value()).unwrap();
+        let new_offset = old_offset + offset;
+
+        let test_offset_interval = Interval::new(
+            0_isize,
+            (self.samples.0.len() - self.window.value())
+                .try_into()
+                .unwrap(),
+        );
+
+        if test_offset_interval.in_co(&new_offset) {
+            Ok(Self {
+                offset: SampleCount::new(new_offset.try_into().unwrap()),
+                ..self
+            })
+        } else {
+            Err(SWError::NotEnoughSamples)
+        }
+    }
+
+    pub fn next(self) -> Result<Self, SWError> {
+        let offset = self.window.value().try_into().unwrap();
+        self.offset(offset)
+    }
+
+    pub fn iter(&'a self) -> SignalWindows<'a> {
+        SignalWindows { w: self.clone() }
+    }
+}
+
+impl<'a> Clone for SignalWindow<'a> {
+    fn clone(&self) -> Self {
+        Self {
+            samples: Samples(&self.samples.0),
+            window: self.window,
+            offset: self.offset,
+        }
+    }
+}
+
+struct SignalWindows<'a> {
+    w: SignalWindow<'a>,
+}
+
+impl<'a> Iterator for SignalWindows<'a> {
+    type Item = SignalWindow<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.w.clone().next() {
+            Ok(w) => {
+                let result = self.w.clone();
+                self.w = w;
+                Some(result)
+            },
+            Err(SWError::NotEnoughSamples) => None,
+            _ => panic!("Impossible case"),
+        }
+    }
+}
 
 struct BandFilter {
     carrier_frequency: Frequency,
@@ -143,7 +267,7 @@ impl EnvelopeCalculation {
 
 struct StartOfFrameSearch {
     transition_offset: usize,
-    signal_strength: f32,
+    signal_level: f32,
     noise_level: f32,
 }
 
@@ -183,7 +307,7 @@ impl StartOfFrameSearch {
 
                 Some(Self {
                     transition_offset: idx,
-                    signal_strength: signal,
+                    signal_level: signal,
                     noise_level: sum / (idx as f32),
                 })
             },
@@ -192,42 +316,9 @@ impl StartOfFrameSearch {
     }
 }
 
-struct SignalWindows<'a> {
-    samples: &'a [f32],
-    window_width: usize,
-    window: usize,
-}
-
-impl<'a> SignalWindows<'a> {
-    pub fn new(samples: &'a [f32], window_width: usize) -> Self {
-        Self {
-            samples,
-            window_width,
-            window: 0,
-        }
-    }
-}
-
-impl<'a> Iterator for SignalWindows<'a> {
-    type Item = &'a [f32];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let beg = self.window * self.window_width;
-        let end = beg + self.window_width;
-
-        if end < self.samples.len() {
-            Some(&self.samples[beg..end])
-        } else {
-            None
-        }
-    }
-}
-
 struct NextTransitionSearch {
     hold_length: usize,
     signal_level: Amplitude,
-    noise_level: Amplitude,
-    sync_offset: isize,
 }
 
 impl NextTransitionSearch {
@@ -239,22 +330,28 @@ impl NextTransitionSearch {
         max_hold_length: usize,
         min_signal_level: Amplitude,
     ) -> Option<Self> {
-        let samples = s.0;
-        let window = window_width.value();
-        let transition = transition_width.value();
-        let dtm: (f32, f32) = match transition_type {
-            Transition::Rising => (-1.0, 1.0),
-            Transition::Falling => (1.0, -1.0),
+        let mtp: f32 = match transition_type {
+            Transition::Rising => 1.0,
+            Transition::Falling => -1.0,
             _ => panic!("This is an incorrect case"),
         };
 
-        let mut hold_length = 0;
-
-        let result = SignalWindows::new(samples, window)
+        SignalWindow::new(s, window_width)
+            .unwrap()
+            .iter()
             .enumerate()
-            .take(max_hold_length);
-
-        todo!()
+            .take(max_hold_length + 1)
+            .map(|(idx, win)| {
+                (
+                    idx,
+                    win.middle_window(transition_width).unwrap().delta() * mtp,
+                )
+            })
+            .find(|(_idx, signal_level)| signal_level > &min_signal_level.value())
+            .map(|(hold_length, signal_level)| Self {
+                hold_length,
+                signal_level: Amplitude::new(signal_level),
+            })
     }
 }
 
@@ -301,7 +398,7 @@ mod test {
             StartOfFrameSearch::search_rising(Samples(&buffer), SampleCount::new(4), 0.5).unwrap();
 
         assert_eq!(result.transition_offset, 2);
-        assert_eq!(result.signal_strength, 1.0);
+        assert_eq!(result.signal_level, 1.0);
         assert_eq!(result.noise_level, 0.0);
     }
 
@@ -320,7 +417,7 @@ mod test {
             StartOfFrameSearch::search_rising(Samples(&buffer), SampleCount::new(6), 0.5).unwrap();
 
         assert_eq!(result.transition_offset, 2);
-        assert_eq!(result.signal_strength, 1.0);
+        assert_eq!(result.signal_level, 1.0);
         assert_eq!(result.noise_level, 0.0);
     }
 }

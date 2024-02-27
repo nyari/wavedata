@@ -134,6 +134,59 @@ pub mod conv1d {
     }
 }
 
+pub struct Interval<T> {
+    begin: T,
+    end: T,
+}
+
+impl<T> Interval<T> {
+    pub fn new(begin: T, end: T) -> Self {
+        Self { begin, end }
+    }
+
+    pub fn begin(&self) -> &T {
+        &self.begin
+    }
+
+    pub fn end(&self) -> &T {
+        &self.end
+    }
+
+    pub fn into_parts(self) -> (T, T) {
+        (self.begin, self.end)
+    }
+}
+
+impl<T> Interval<T>
+where
+    T: PartialOrd,
+{
+    pub fn in_oo(&self, elem: &T) -> bool {
+        self.begin < *elem && elem < &self.end
+    }
+    pub fn in_co(&self, elem: &T) -> bool {
+        self.begin <= *elem && elem < &self.end
+    }
+    pub fn in_oc(&self, elem: &T) -> bool {
+        self.begin < *elem && elem <= &self.end
+    }
+    pub fn in_cc(&self, elem: &T) -> bool {
+        self.begin < *elem && elem < &self.end
+    }
+    pub fn contains(&self, other: &Self) -> bool {
+        self.in_cc(&other.begin) && self.in_cc(&other.end)
+    }
+    pub fn try_from<Q>(value: Interval<Q>) -> Result<Self, <T as TryFrom<Q>>::Error>
+    where
+        T: TryFrom<Q>,
+    {
+        Ok(Self {
+            begin: T::try_from(value.begin)?,
+            end: T::try_from(value.end)?,
+        })
+    }
+}
+
 pub fn median_non_averaged<T>(input: &[T]) -> Result<T, ()>
 where
     T: PartialOrd + Clone,
