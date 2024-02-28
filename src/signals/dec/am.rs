@@ -355,6 +355,28 @@ impl NextTransitionSearch {
     }
 }
 
+struct NoiseLevelCalculation {
+    noise_level: Amplitude,
+}
+
+impl NoiseLevelCalculation {
+    pub fn calculate(s: Samples, transition_width: SampleCount) -> Self {
+        let sum: f32 =
+            s.0.windows(transition_width.value())
+                .map(|win| {
+                    let first = win.first().unwrap();
+                    let last = win.last().unwrap();
+
+                    (last - first).abs()
+                })
+                .sum();
+
+        Self {
+            noise_level: Amplitude::new(sum / ((s.0.len() - transition_width.value() + 1) as f32)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
