@@ -2,7 +2,7 @@
 //!
 //! ## Signal description
 //!
-use std::{cell::RefCell, collections::VecDeque, ops::Div, path::Ancestors};
+use std::{cell::RefCell, collections::VecDeque, ops::Div, path::Ancestors, sync::Mutex};
 
 use num::{bigint::Sign, complex::ComplexFloat};
 
@@ -14,8 +14,11 @@ use crate::{
 };
 
 #[derive(Debug)]
-enum Error {
+pub enum Error {
     NotEnoughSamples,
+    TransitionWiderThanWindow,
+    IncorrectFrame(Vec<Transition>, usize),
+    IncorrectPreamble(usize),
 }
 
 struct SignalWindow<'a> {
@@ -385,6 +388,110 @@ impl NoiseLevelCalculation {
         Ok(Self {
             noise_level: Amplitude::new(sum / ((s.0.len() - transition_width.value() + 1) as f32)),
         })
+    }
+}
+
+pub enum DecoderOutput {
+    Consumed(usize),
+    Finshed(Vec<Transition>, usize),
+}
+
+enum DecoderState {
+    SearchForPreamble,
+    Preamble,
+    FailedPreamble,
+    Processing,
+}
+
+pub struct TransitionDecoder {
+    preamble: SampleCount,
+    hold: SampleCount,
+    transition: SampleCount,
+    window: SampleCount,
+    min_snr: Proportion,
+    noise_level: WindowedWeightedAverage<f32>,
+    result: Vec<Transition>,
+}
+
+impl TransitionDecoder {
+    pub fn new(
+        preamble: SampleCount,
+        hold: SampleCount,
+        transition: SampleCount,
+        window: SampleCount,
+        min_snr: Proportion,
+    ) -> Result<Self, Error> {
+        if window > transition {
+            return Err(Error::TransitionWiderThanWindow);
+        }
+
+        Ok(Self {
+            preamble,
+            hold,
+            transition,
+            window,
+            min_snr,
+            noise_level: WindowedWeightedAverage::new(0.0, (hold.value() * window.value()) as f32),
+            result: Vec::new(),
+        })
+    }
+
+    pub fn process(&mut self, s: Samples) -> Result<DecoderOutput, Error> {
+        let mut next_samples = Samples(s.0);
+        loop {
+            match self.proceed(Samples(next_samples.0))? {
+                DecoderOutput::Consumed(0) => break Ok(DecoderOutput::Consumed(0)),
+                DecoderOutput::Consumed(value) => next_samples = Samples(&next_samples.0[value..]),
+                other => break Ok(other),
+            }
+        }
+    }
+
+    fn proceed(&mut self, s: Samples) -> Result<DecoderOutput, Error> {
+        if s.0.len() < self.window.value() {
+            return Ok(DecoderOutput::Consumed(0));
+        }
+
+        match self.get_state() {
+            DecoderState::SearchForPreamble => {
+                match StartOfFrameSearch::search_rising(
+                    Samples(s.0),
+                    self.transition,
+                    self.calc_min_signal_level().value(),
+                ) {
+                    Some(sof) => {
+                        self.noise_level
+                            .acc(sof.noise_level, sof.transition_offset as f32);
+                        self.result.push(Transition::Rising);
+                        Ok(DecoderOutput::Consumed(sof.transition_offset))
+                    },
+                    None => Ok(DecoderOutput::Consumed(s.0.len())),
+                }
+            },
+            _ => todo!(),
+        }
+    }
+
+    fn calc_min_signal_level(&self) -> Amplitude {
+        todo!()
+    }
+
+    fn get_state(&self) -> DecoderState {
+        if self.result.is_empty() {
+            DecoderState::SearchForPreamble
+        } else if self.result.len() < self.preamble.value() {
+            if self.result.len() < 2 {
+                DecoderState::Preamble
+            } else {
+                self.result
+                    .windows(2)
+                    .map(|slc| slc[0].neg() == slc[1])
+                    .find(|b| !b)
+                    .map_or_else(|| DecoderState::FailedPreamble, |_| DecoderState::Preamble)
+            }
+        } else {
+            DecoderState::Processing
+        }
     }
 }
 
