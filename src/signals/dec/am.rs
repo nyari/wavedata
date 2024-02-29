@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-enum SWError {
+enum Error {
     NotEnoughSamples,
 }
 
@@ -25,7 +25,7 @@ struct SignalWindow<'a> {
 }
 
 impl<'a> SignalWindow<'a> {
-    pub fn new(s: Samples<'a>, window: SampleCount) -> Result<Self, SWError> {
+    pub fn new(s: Samples<'a>, window: SampleCount) -> Result<Self, Error> {
         if window.value() <= s.0.len() && !s.0.is_empty() {
             Ok(Self {
                 samples: s,
@@ -33,7 +33,7 @@ impl<'a> SignalWindow<'a> {
                 offset: SampleCount::new(0),
             })
         } else {
-            Err(SWError::NotEnoughSamples)
+            Err(Error::NotEnoughSamples)
         }
     }
 
@@ -62,7 +62,7 @@ impl<'a> SignalWindow<'a> {
         self.offset.value() + self.window.value() / 2
     }
 
-    pub fn middle_window(&self, samples: SampleCount) -> Result<Self, SWError> {
+    pub fn middle_window(&self, samples: SampleCount) -> Result<Self, Error> {
         let half = samples.value() / 2;
         let middle = self.middle_index();
         if middle >= half {
@@ -73,11 +73,11 @@ impl<'a> SignalWindow<'a> {
                 offset: SampleCount::new(0),
             })
         } else {
-            Err(SWError::NotEnoughSamples)
+            Err(Error::NotEnoughSamples)
         }
     }
 
-    pub fn offset(self, offset: isize) -> Result<Self, SWError> {
+    pub fn offset(self, offset: isize) -> Result<Self, Error> {
         let old_offset = isize::try_from(self.offset.value()).unwrap();
         let new_offset = old_offset + offset;
 
@@ -94,11 +94,11 @@ impl<'a> SignalWindow<'a> {
                 ..self
             })
         } else {
-            Err(SWError::NotEnoughSamples)
+            Err(Error::NotEnoughSamples)
         }
     }
 
-    pub fn next(self) -> Result<Self, SWError> {
+    pub fn next(self) -> Result<Self, Error> {
         let offset = self.window.value().try_into().unwrap();
         self.offset(offset)
     }
@@ -131,7 +131,7 @@ impl<'a> Iterator for SignalWindows<'a> {
                 self.w = w;
                 Some(result)
             },
-            Err(SWError::NotEnoughSamples) => None,
+            Err(Error::NotEnoughSamples) => None,
             _ => panic!("Impossible case"),
         }
     }
@@ -176,10 +176,13 @@ struct EnvelopeCalculation {
 }
 
 impl EnvelopeCalculation {
-    pub fn new(carrier_wave_cycle: SampleCount) -> Self {
-        Self {
-            buffer_size: carrier_wave_cycle.value(),
+    pub fn new(carrier_wave_cycle: SampleCount) -> Result<Self, Error> {
+        if carrier_wave_cycle.value() == 0 {
+            return Err(Error::NotEnoughSamples);
         }
+        Ok(Self {
+            buffer_size: carrier_wave_cycle.value(),
+        })
     }
 
     pub fn tail_lengths(&self) -> (usize, usize) {
@@ -281,6 +284,10 @@ impl StartOfFrameSearch {
 
         let tw = transition_width.value() + 1;
 
+        if tw == 0 || samples.is_empty() {
+            return None;
+        }
+
         let mid_transition = samples
             .windows(tw)
             .map(|window| window.last().unwrap() - window.first().unwrap())
@@ -360,7 +367,11 @@ struct NoiseLevelCalculation {
 }
 
 impl NoiseLevelCalculation {
-    pub fn calculate(s: Samples, transition_width: SampleCount) -> Self {
+    pub fn calculate(s: Samples, transition_width: SampleCount) -> Result<Self, Error> {
+        if transition_width.value() == 0 {
+            return Err(Error::NotEnoughSamples);
+        }
+
         let sum: f32 =
             s.0.windows(transition_width.value())
                 .map(|win| {
@@ -371,9 +382,9 @@ impl NoiseLevelCalculation {
                 })
                 .sum();
 
-        Self {
+        Ok(Self {
             noise_level: Amplitude::new(sum / ((s.0.len() - transition_width.value() + 1) as f32)),
-        }
+        })
     }
 }
 
@@ -383,7 +394,7 @@ mod test {
 
     #[test]
     fn test_envelope_calculation_sawtooth() {
-        let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
+        let mut calc = EnvelopeCalculation::new(SampleCount::new(4)).unwrap();
         let mut buffer = [0.0f32, 1., 0., -1., 0., 1., 0., -1., 0.];
         calc.process_padded(SamplesMut(&mut buffer));
         assert_eq!(buffer, [1.0f32, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0]);
@@ -391,7 +402,7 @@ mod test {
 
     #[test]
     fn test_envelope_calculation_falling_ramp() {
-        let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
+        let mut calc = EnvelopeCalculation::new(SampleCount::new(4)).unwrap();
         let mut buffer = [1.0f32, 1., 1., 1., 0.5, 0., 0., 0., 0.];
         calc.process_padded(SamplesMut(&mut buffer));
         assert_eq!(buffer, [1.0f32, 1.0, 1.0, 1.0, 1.0, 0.5, 0.0, 0.0, 0.0]);
@@ -399,7 +410,7 @@ mod test {
 
     #[test]
     fn test_envelope_calculation_sawtooth_no_padding() {
-        let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
+        let mut calc = EnvelopeCalculation::new(SampleCount::new(4)).unwrap();
         let mut buffer = [0.0f32, 1., 0., -1., 0., 1., 0., -1., 0.];
         calc.process(SamplesMut(&mut buffer));
         assert_eq!(buffer, [0.0f32, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 0.0]);
@@ -407,7 +418,7 @@ mod test {
 
     #[test]
     fn test_envelope_calculation_falling_ramp_no_padding() {
-        let mut calc = EnvelopeCalculation::new(SampleCount::new(4));
+        let mut calc = EnvelopeCalculation::new(SampleCount::new(4)).unwrap();
         let mut buffer = [1.0f32, 1., 1., 1., 0.5, 0., 0., 0., 0.];
         calc.process(SamplesMut(&mut buffer));
         assert_eq!(buffer, [1.0f32, 1.0, 1.0, 1.0, 1.0, 0.5, 0.0, 0.0, 0.0]);
