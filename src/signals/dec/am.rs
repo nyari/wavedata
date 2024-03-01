@@ -18,7 +18,7 @@ pub enum Error {
     NotEnoughSamples,
     TransitionWiderThanWindow,
     IncorrectFrame(Vec<Transition>, usize),
-    IncorrectPreamble(usize),
+    IncorrectPreamble,
 }
 
 struct SignalWindow<'a> {
@@ -391,6 +391,26 @@ impl NoiseLevelCalculation {
     }
 }
 
+struct TransitionWindowSychronizer {
+    offset: isize,
+}
+
+impl TransitionWindowSychronizer {
+    pub fn synchronize(win: SignalWindow, transition: SampleCount) -> Self {
+        let t = transition.value() * 3 / 2;
+        let middle = win.middle_index();
+        let testwin = win.middle_window(SampleCount::new(t)).unwrap();
+        let result = testwin
+            .slice()
+            .0
+            .windows(transition.value())
+            .map(|s| (s.last().unwrap() - s.first().unwrap()).abs())
+            .enumerate()
+            .max_by(|lhs, rhs| lhs.1.partial_cmp(&rhs.1).unwrap())
+            .unwrap();
+    }
+}
+
 pub enum DecoderOutput {
     Consumed(usize),
     Finshed(Vec<Transition>, usize),
@@ -463,12 +483,43 @@ impl TransitionDecoder {
                         self.noise_level
                             .acc(sof.noise_level, sof.transition_offset as f32);
                         self.result.push(Transition::Rising);
-                        Ok(DecoderOutput::Consumed(sof.transition_offset))
+                        let centering_backtrack = self.window.value() - self.transition.value() / 2;
+                        if centering_backtrack > sof.transition_offset {
+                            Err(Error::NotEnoughSamples)
+                        } else {
+                            Ok(DecoderOutput::Consumed(
+                                sof.transition_offset - centering_backtrack,
+                            ))
+                        }
                     },
                     None => Ok(DecoderOutput::Consumed(s.0.len())),
                 }
             },
-            _ => todo!(),
+            DecoderState::FailedPreamble => Err(Error::IncorrectPreamble),
+            _ => {
+                let expected_transition = self.result.last().unwrap().neg();
+                let next = NextTransitionSearch::search(
+                    s,
+                    self.window,
+                    self.transition,
+                    expected_transition,
+                    self.hold.value(),
+                    self.calc_min_signal_level(),
+                );
+
+                match next {
+                    Some(result) => {
+                        if result.hold_length > 0 {
+                            self.result.push(Transition::Hold(result.hold_length))
+                        }
+                        self.result.push(expected_transition);
+                        Ok(DecoderOutput::Consumed(
+                            (result.hold_length + 1) * self.window.value(),
+                        ))
+                    },
+                    None => todo!(),
+                }
+            },
         }
     }
 
