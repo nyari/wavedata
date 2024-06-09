@@ -71,9 +71,9 @@ impl<'a> SignalWindow<'a> {
         if middle >= half {
             let beg = middle - half;
             Ok(Self {
-                samples: Samples(&self.samples.0[beg..beg + samples.value()]),
+                samples: Samples(&self.samples.0),
                 window: samples,
-                offset: SampleCount::new(0),
+                offset: SampleCount::new(beg),
             })
         } else {
             Err(Error::NotEnoughSamples)
@@ -349,6 +349,7 @@ impl NextTransitionSearch {
         SignalWindow::new(s, window_width)
             .unwrap()
             .iter()
+            .skip(1)
             .enumerate()
             .take(max_hold_length + 1)
             .map(|(idx, win)| {
@@ -358,8 +359,8 @@ impl NextTransitionSearch {
                 )
             })
             .find(|(_idx, signal_level)| signal_level > &min_signal_level.value())
-            .map(|(hold_length, signal_level)| Self {
-                hold_length,
+            .map(|(window_offset, signal_level)| Self {
+                hold_length: window_offset,
                 signal_level: Amplitude::new(signal_level),
             })
     }
@@ -391,11 +392,11 @@ impl NoiseLevelCalculation {
     }
 }
 
-struct TransitionWindowSychronizer {
+struct TransitionWindowSynchronizer {
     offset: isize,
 }
 
-impl TransitionWindowSychronizer {
+impl TransitionWindowSynchronizer {
     pub fn synchronize(win: SignalWindow, transition: SampleCount) -> Self {
         let t = transition.value() * 3 / 2;
         let middle = win.middle_index();
@@ -408,6 +409,7 @@ impl TransitionWindowSychronizer {
             .enumerate()
             .max_by(|lhs, rhs| lhs.1.partial_cmp(&rhs.1).unwrap())
             .unwrap();
+        todo!()
     }
 }
 
@@ -610,6 +612,89 @@ mod test {
         assert_eq!(result.transition_offset, 2);
         assert_eq!(result.signal_level, 1.0);
         assert_eq!(result.noise_level, 0.0);
+    }
+
+    #[test]
+    fn next_transition_falling_search_immediately() {
+        let buffer = [0.0f32, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+        let result = NextTransitionSearch::search(
+            Samples(&buffer),
+            SampleCount::new(2),
+            SampleCount::new(2),
+            Transition::Falling,
+            4,
+            Amplitude::new(0.7),
+        )
+        .unwrap();
+
+        assert_eq!(result.hold_length, 0);
+        assert_eq!(result.signal_level, Amplitude::new(1.0));
+    }
+
+    #[test]
+    fn next_transition_falling_search_hold_at_max_hold_length() {
+        let buffer = [0.0f32, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+        let result = NextTransitionSearch::search(
+            Samples(&buffer),
+            SampleCount::new(2),
+            SampleCount::new(2),
+            Transition::Falling,
+            2,
+            Amplitude::new(0.7),
+        )
+        .unwrap();
+
+        assert_eq!(result.hold_length, 2);
+        assert_eq!(result.signal_level, Amplitude::new(1.0));
+    }
+
+    #[test]
+    fn next_transition_falling_search_hold_longer_than_specified() {
+        let buffer = [
+            0.0f32, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+        ];
+        assert!(NextTransitionSearch::search(
+            Samples(&buffer),
+            SampleCount::new(2),
+            SampleCount::new(2),
+            Transition::Falling,
+            2,
+            Amplitude::new(0.7),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn next_transition_rising_search_immediately() {
+        let buffer = [1.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
+        let result = NextTransitionSearch::search(
+            Samples(&buffer),
+            SampleCount::new(2),
+            SampleCount::new(2),
+            Transition::Rising,
+            4,
+            Amplitude::new(0.7),
+        )
+        .unwrap();
+
+        assert_eq!(result.hold_length, 0);
+        assert_eq!(result.signal_level, Amplitude::new(1.0));
+    }
+
+    #[test]
+    fn next_transition_rising_search_ignore_first_window_in_buffer() {
+        let buffer = [
+            0.0f32, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+        ];
+        assert!(NextTransitionSearch::search(
+            Samples(&buffer),
+            SampleCount::new(2),
+            SampleCount::new(2),
+            Transition::Rising,
+            2,
+            Amplitude::new(0.7),
+        )
+        .is_none());
     }
 }
 
