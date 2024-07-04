@@ -366,11 +366,11 @@ impl NextTransitionSearch {
     }
 }
 
-struct NoiseLevelCalculation {
+struct HoldNoiseLevelCalculation {
     noise_level: Amplitude,
 }
 
-impl NoiseLevelCalculation {
+impl HoldNoiseLevelCalculation {
     pub fn calculate(s: Samples, transition_width: SampleCount) -> Result<Self, Error> {
         if transition_width.value() == 0 {
             return Err(Error::NotEnoughSamples);
@@ -695,6 +695,49 @@ mod test {
             Amplitude::new(0.7),
         )
         .is_none());
+    }
+
+    #[test]
+    fn hold_noise_level_calculation_constant_level_is_0() {
+        let buffer = [1.0f32, 1.0, 1.0, 1.0];
+        let result = HoldNoiseLevelCalculation::calculate(Samples(&buffer), SampleCount::new(2));
+
+        assert_eq!(result.unwrap().noise_level, Amplitude::new(0.0));
+    }
+
+    #[test]
+    fn hold_noise_level_calculation_linear_rising_signal_level_is_pitch_of_curve() {
+        let buffer = [0.0f32, 1.0, 2.0, 3.0];
+        let result = HoldNoiseLevelCalculation::calculate(Samples(&buffer), SampleCount::new(2));
+
+        assert_eq!(result.unwrap().noise_level, Amplitude::new(1.0));
+    }
+
+    #[test]
+    fn hold_noise_level_calculation_linear_falling_signal_level_is_absolute_pitch_of_curve() {
+        let buffer = [3.0f32, 2.0, 1.0, 0.0];
+        let result = HoldNoiseLevelCalculation::calculate(Samples(&buffer), SampleCount::new(2));
+
+        assert_eq!(result.unwrap().noise_level, Amplitude::new(1.0));
+    }
+
+    #[test]
+    fn hold_noise_level_calculation_sawtooth_signal_is_the_amplitude() {
+        let buffer = [0.0f32, 1.0, 0.0, 1.0];
+        let result = HoldNoiseLevelCalculation::calculate(Samples(&buffer), SampleCount::new(2));
+
+        assert_eq!(result.unwrap().noise_level, Amplitude::new(1.0))
+    }
+
+    #[test]
+    fn hold_noise_level_calculation_attenuating_sawtooth_signal_is_the_average_amplitude() {
+        let buffer = [0.0f32, 1.0, 0.25, 0.5];
+        let result = HoldNoiseLevelCalculation::calculate(Samples(&buffer), SampleCount::new(2));
+
+        assert_eq!(
+            result.unwrap().noise_level,
+            Amplitude::new(0.6666666666666666)
+        );
     }
 }
 
