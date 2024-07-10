@@ -66,7 +66,7 @@ impl<'a> SignalWindow<'a> {
     }
 
     pub fn middle_window(&self, samples: SampleCount) -> Result<Self, Error> {
-        let half = samples.value() / 2;
+        let half = (samples.value() + 1) / 2;
         let middle = self.middle_index();
         if middle >= half {
             let beg = middle - half;
@@ -398,7 +398,9 @@ struct TransitionWindowSynchronizer {
 
 impl TransitionWindowSynchronizer {
     pub fn synchronize(win: SignalWindow, transition: SampleCount) -> Self {
-        let enlarged_size = (transition.value() * 3 / 2);
+        let enlarged_size = (num::rational::Ratio::new_raw(3, 2) * transition.value())
+            .ceil()
+            .to_integer();
         let enlarged_sample_count: isize = enlarged_size.try_into().unwrap();
         let testwin = win
             .middle_window(SampleCount::new(enlarged_sample_count.try_into().unwrap()))
@@ -748,7 +750,7 @@ mod test {
     }
 
     #[test]
-    fn transition_window_synhronizer_transition_small_no_change_rising() {
+    fn transition_window_synhronizer_transition_small_even_no_change_rising() {
         let signal = [0.0f32, 0.0, 0.0, 0.05, 0.1, 0.8, 1.0, 1.0, 1.0, 1.0];
         let transition_width = SampleCount::new(4);
 
@@ -761,7 +763,7 @@ mod test {
     }
 
     #[test]
-    fn transition_window_synhronizer_transition_small_no_change_falling() {
+    fn transition_window_synhronizer_transition_small_even_no_change_falling() {
         let signal = [1.0f32, 1.0, 1.0, 1.0, 0.8, 0.1, 0.05, 0.0, 0.0, 0.0];
         let transition_width = SampleCount::new(4);
 
@@ -771,6 +773,61 @@ mod test {
         );
 
         assert_eq!(result.offset, 0);
+    }
+
+    #[test]
+    fn transition_window_synhronizer_transition_small_odd_no_change() {
+        let signal = [0.0f32, 0.0, 0.0, 0.0, 0.1, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let transition_width = SampleCount::new(3);
+
+        let result = TransitionWindowSynchronizer::synchronize(
+            SignalWindow::new(Samples(&signal), SampleCount::new(10)).unwrap(),
+            transition_width,
+        );
+
+        assert_eq!(result.offset, 0);
+    }
+
+    #[test]
+    fn transition_window_synhronizer_transition_small_odd_move_one_forward() {
+        let signal = [0.0f32, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 1.0, 1.0, 1.0];
+        let transition_width = SampleCount::new(3);
+
+        let result = TransitionWindowSynchronizer::synchronize(
+            SignalWindow::new(Samples(&signal), SampleCount::new(10)).unwrap(),
+            transition_width,
+        );
+
+        assert_eq!(result.offset, 1);
+    }
+
+    #[test]
+    fn transition_window_synhronizer_transition_small_odd_move_one_backward() {
+        let signal = [0.0f32, 0.0, 0.0, 0.1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let transition_width = SampleCount::new(3);
+
+        let result = TransitionWindowSynchronizer::synchronize(
+            SignalWindow::new(Samples(&signal), SampleCount::new(10)).unwrap(),
+            transition_width,
+        );
+
+        assert_eq!(result.offset, -1);
+    }
+
+    #[test]
+    fn transition_window_synhronizer_transition_larger_transition_than_window() {
+        let signal = [0.0f32, 0.0, 0.0, 0.0, 0.1, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let transition_width = SampleCount::new(3);
+
+        let result = TransitionWindowSynchronizer::synchronize(
+            SignalWindow::new(Samples(&signal), SampleCount::new(10))
+                .unwrap()
+                .middle_window(SampleCount::new(3))
+                .unwrap(),
+            transition_width,
+        );
+
+        assert_eq!(result.offset, 1);
     }
 }
 
