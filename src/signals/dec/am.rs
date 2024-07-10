@@ -398,10 +398,13 @@ struct TransitionWindowSynchronizer {
 
 impl TransitionWindowSynchronizer {
     pub fn synchronize(win: SignalWindow, transition: SampleCount) -> Self {
-        let t = transition.value() * 3 / 2;
-        let middle = win.middle_index();
-        let testwin = win.middle_window(SampleCount::new(t)).unwrap();
-        let result = testwin
+        let enlarged_size = (transition.value() * 3 / 2);
+        let enlarged_sample_count: isize = enlarged_size.try_into().unwrap();
+        let testwin = win
+            .middle_window(SampleCount::new(enlarged_sample_count.try_into().unwrap()))
+            .unwrap();
+
+        let (refinement, _) = testwin
             .slice()
             .0
             .windows(transition.value())
@@ -409,7 +412,11 @@ impl TransitionWindowSynchronizer {
             .enumerate()
             .max_by(|lhs, rhs| lhs.1.partial_cmp(&rhs.1).unwrap())
             .unwrap();
-        todo!()
+
+        Self {
+            offset: isize::try_from(refinement).unwrap()
+                - (enlarged_sample_count - isize::try_from(transition.value()).unwrap()) / 2,
+        }
     }
 }
 
@@ -738,6 +745,32 @@ mod test {
             result.unwrap().noise_level,
             Amplitude::new(0.6666666666666666)
         );
+    }
+
+    #[test]
+    fn transition_window_synhronizer_transition_small_no_change_rising() {
+        let signal = [0.0f32, 0.0, 0.0, 0.05, 0.1, 0.8, 1.0, 1.0, 1.0, 1.0];
+        let transition_width = SampleCount::new(4);
+
+        let result = TransitionWindowSynchronizer::synchronize(
+            SignalWindow::new(Samples(&signal), SampleCount::new(10)).unwrap(),
+            transition_width,
+        );
+
+        assert_eq!(result.offset, 0);
+    }
+
+    #[test]
+    fn transition_window_synhronizer_transition_small_no_change_falling() {
+        let signal = [1.0f32, 1.0, 1.0, 1.0, 0.8, 0.1, 0.05, 0.0, 0.0, 0.0];
+        let transition_width = SampleCount::new(4);
+
+        let result = TransitionWindowSynchronizer::synchronize(
+            SignalWindow::new(Samples(&signal), SampleCount::new(10)).unwrap(),
+            transition_width,
+        );
+
+        assert_eq!(result.offset, 0);
     }
 }
 
