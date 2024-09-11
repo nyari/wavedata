@@ -4,7 +4,7 @@
 //!
 use std::{cell::RefCell, collections::VecDeque, ops::Div, path::Ancestors, sync::Mutex};
 
-use num::{bigint::Sign, complex::ComplexFloat};
+use num::{bigint::Sign, complex::ComplexFloat, Zero};
 
 use crate::{
     sampling::{SampleCount, Samples, SamplesMut, SamplingRate},
@@ -180,7 +180,7 @@ struct EnvelopeCalculation {
 
 impl EnvelopeCalculation {
     pub fn new(carrier_wave_cycle: SampleCount) -> Result<Self, Error> {
-        if carrier_wave_cycle.value() == 0 {
+        if carrier_wave_cycle.is_zero() {
             return Err(Error::NotEnoughSamples);
         }
         Ok(Self {

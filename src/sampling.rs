@@ -27,6 +27,16 @@ impl SampleCount {
     }
 }
 
+impl num::Zero for SampleCount {
+    fn zero() -> Self {
+        SampleCount(0)
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+}
+
 impl std::ops::Add<SampleCount> for SampleCount {
     type Output = Self;
     fn add(self, rhs: SampleCount) -> Self::Output {
