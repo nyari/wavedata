@@ -273,15 +273,15 @@ impl EnvelopeCalculation {
 
 struct StartOfFrameSearch {
     transition_offset: usize,
-    signal_level: f32,
-    noise_level: f32,
+    signal_level: Amplitude,
+    noise_level: Amplitude,
 }
 
 impl StartOfFrameSearch {
     pub fn search_rising(
         s: Samples,
         transition_width: SampleCount,
-        min_signal_level: f32,
+        min_signal_level: Amplitude,
     ) -> Option<Self> {
         let samples = s.0;
 
@@ -303,7 +303,7 @@ impl StartOfFrameSearch {
                         Some((first_idx, max_idx, old_signal))
                     }
                 } else {
-                    if signal > min_signal_level {
+                    if signal > min_signal_level.value() {
                         Some((idx, idx, signal))
                     } else {
                         None
@@ -317,8 +317,8 @@ impl StartOfFrameSearch {
 
                 Some(Self {
                     transition_offset: idx,
-                    signal_level: signal,
-                    noise_level: sum / (idx as f32),
+                    signal_level: Amplitude::new(signal),
+                    noise_level: Amplitude::new(sum / (idx as f32)),
                 })
             },
             None => None,
@@ -491,11 +491,11 @@ impl TransitionDecoder {
                 match StartOfFrameSearch::search_rising(
                     Samples(s.0),
                     self.transition,
-                    self.calc_min_signal_level().value(),
+                    self.calc_min_signal_level(),
                 ) {
                     Some(sof) => {
                         self.noise_level
-                            .acc(sof.noise_level, sof.transition_offset as f32);
+                            .acc(sof.noise_level.value(), sof.transition_offset as f32);
                         self.result.push(Transition::Rising);
                         let centering_backtrack = self.window.value() - self.transition.value() / 2;
                         if centering_backtrack > sof.transition_offset {
@@ -608,18 +608,26 @@ mod test {
     #[test]
     fn start_of_frame_search_ramp_0_to_1_on_length_4() {
         let buffer = [0.0f32, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0];
-        let result =
-            StartOfFrameSearch::search_rising(Samples(&buffer), SampleCount::new(4), 0.5).unwrap();
+        let result = StartOfFrameSearch::search_rising(
+            Samples(&buffer),
+            SampleCount::new(4),
+            Amplitude::new(0.5),
+        )
+        .unwrap();
 
         assert_eq!(result.transition_offset, 2);
-        assert_eq!(result.signal_level, 1.0);
-        assert_eq!(result.noise_level, 0.0);
+        assert_eq!(result.signal_level, Amplitude::new(1.0));
+        assert_eq!(result.noise_level, Amplitude::new(0.0));
     }
 
     #[test]
     fn start_of_frame_search_ramp_0_to_1_on_length_4_under_signal_level() {
         let buffer = [0.0f32, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0];
-        let result = StartOfFrameSearch::search_rising(Samples(&buffer), SampleCount::new(4), 2.0);
+        let result = StartOfFrameSearch::search_rising(
+            Samples(&buffer),
+            SampleCount::new(4),
+            Amplitude::new(2.0),
+        );
 
         assert!(result.is_none());
     }
@@ -627,12 +635,16 @@ mod test {
     #[test]
     fn start_of_frame_search_non_monotonous_ramp_0_to_1_on_length_6() {
         let buffer = [0.0f32, 0.0, 0.0, 0.25, 0.5, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0];
-        let result =
-            StartOfFrameSearch::search_rising(Samples(&buffer), SampleCount::new(6), 0.5).unwrap();
+        let result = StartOfFrameSearch::search_rising(
+            Samples(&buffer),
+            SampleCount::new(6),
+            Amplitude::new(0.5),
+        )
+        .unwrap();
 
         assert_eq!(result.transition_offset, 2);
-        assert_eq!(result.signal_level, 1.0);
-        assert_eq!(result.noise_level, 0.0);
+        assert_eq!(result.signal_level, Amplitude::new(1.0));
+        assert_eq!(result.noise_level, Amplitude::new(0.0));
     }
 
     #[test]
