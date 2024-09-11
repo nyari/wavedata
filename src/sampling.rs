@@ -6,6 +6,10 @@ impl<'a> Samples<'a> {
     pub fn count(&self) -> SampleCount {
         SampleCount(self.0.len())
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 pub struct SamplesMut<'a>(pub &'a mut [f32]);
 

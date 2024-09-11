@@ -29,7 +29,7 @@ struct SignalWindow<'a> {
 
 impl<'a> SignalWindow<'a> {
     pub fn new(s: Samples<'a>, window: SampleCount) -> Result<Self, Error> {
-        if window.value() <= s.0.len() && !s.0.is_empty() {
+        if window <= s.count() && !s.is_empty() {
             Ok(Self {
                 samples: s,
                 window,
@@ -48,13 +48,13 @@ impl<'a> SignalWindow<'a> {
         self.offset
     }
 
-    pub fn interval(&self) -> Interval<usize> {
-        Interval::new(self.begin().value(), self.end().value())
+    pub fn interval(&self) -> Interval<SampleCount> {
+        Interval::new(self.begin(), self.end())
     }
 
-    pub fn delta(&self) -> f32 {
+    pub fn delta(&self) -> Amplitude {
         let slice = self.slice();
-        slice.0.last().unwrap() - slice.0.first().unwrap()
+        Amplitude::new(slice.0.last().unwrap() - slice.0.first().unwrap())
     }
 
     pub fn slice(&self) -> Samples<'a> {
@@ -355,13 +355,16 @@ impl NextTransitionSearch {
             .map(|(idx, win)| {
                 (
                     idx,
-                    win.middle_window(transition_width).unwrap().delta() * mtp,
+                    win.middle_window(transition_width)
+                        .unwrap()
+                        .delta()
+                        .scale(mtp),
                 )
             })
-            .find(|(_idx, signal_level)| signal_level > &min_signal_level.value())
+            .find(|(_idx, signal_level)| signal_level > &min_signal_level)
             .map(|(window_offset, signal_level)| Self {
                 hold_length: window_offset,
-                signal_level: Amplitude::new(signal_level),
+                signal_level: signal_level,
             })
     }
 }
