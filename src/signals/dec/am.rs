@@ -2,15 +2,14 @@
 //!
 //! ## Signal description
 //!
-use std::{cell::RefCell, collections::VecDeque, ops::Div, path::Ancestors, sync::Mutex};
 
-use num::{bigint::Sign, complex::ComplexFloat, Zero};
+use num::{complex::ComplexFloat, Zero};
 
 use crate::{
     sampling::{SampleCount, Samples, SamplesMut, SamplingRate},
     signals::{am::Transition, proc::FFT},
     units::{Amplitude, Frequency, Proportion},
-    utils::{self, Interval, WindowedWeightedAverage},
+    utils::{Interval, WindowedWeightedAverage},
 };
 
 #[derive(Debug)]
@@ -271,6 +270,36 @@ impl EnvelopeCalculation {
     }
 }
 
+struct HoldNoiseLevelCalculation {
+    noise_level: Amplitude,
+}
+
+impl HoldNoiseLevelCalculation {
+    pub fn calculate(s: Samples, transition_width: SampleCount) -> Result<Self, Error> {
+        if transition_width > s.count() {
+            return Err(Error::NotEnoughSamples);
+        }
+
+        let sum_of_transition_window_absolute_deltas: f32 =
+            s.0.windows(transition_width.value())
+                .map(|win| {
+                    let first = win.first().unwrap();
+                    let last = win.last().unwrap();
+
+                    (last - first).abs()
+                })
+                .sum();
+
+        let number_of_transition_windows = s.0.len() - transition_width.value() + 1;
+
+        Ok(Self {
+            noise_level: Amplitude::new(
+                sum_of_transition_window_absolute_deltas / (number_of_transition_windows as f32),
+            ),
+        })
+    }
+}
+
 struct StartOfFrameSearch {
     transition_offset: usize,
     signal_level: Amplitude,
@@ -313,12 +342,19 @@ impl StartOfFrameSearch {
 
         match mid_transition {
             Some((_, idx, signal)) => {
-                let sum: f32 = samples[..idx].iter().sum();
+                let noise_level_calculation = HoldNoiseLevelCalculation::calculate(
+                    Samples(&samples[..idx]),
+                    transition_width,
+                )
+                .ok();
 
                 Some(Self {
                     transition_offset: idx,
                     signal_level: Amplitude::new(signal),
-                    noise_level: Amplitude::new(sum / (idx as f32)),
+                    noise_level: match noise_level_calculation {
+                        Some(nlc) => nlc.noise_level,
+                        None => Amplitude::zero(),
+                    },
                 })
             },
             None => None,
@@ -366,32 +402,6 @@ impl NextTransitionSearch {
                 hold_length: window_offset,
                 signal_level: signal_level,
             })
-    }
-}
-
-struct HoldNoiseLevelCalculation {
-    noise_level: Amplitude,
-}
-
-impl HoldNoiseLevelCalculation {
-    pub fn calculate(s: Samples, transition_width: SampleCount) -> Result<Self, Error> {
-        if transition_width.value() == 0 {
-            return Err(Error::NotEnoughSamples);
-        }
-
-        let sum: f32 =
-            s.0.windows(transition_width.value())
-                .map(|win| {
-                    let first = win.first().unwrap();
-                    let last = win.last().unwrap();
-
-                    (last - first).abs()
-                })
-                .sum();
-
-        Ok(Self {
-            noise_level: Amplitude::new(sum / ((s.0.len() - transition_width.value() + 1) as f32)),
-        })
     }
 }
 
