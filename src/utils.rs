@@ -246,8 +246,10 @@ where
         + Clone,
 {
     pub fn acc(&mut self, value: T, weight: T) {
-        self.value = (self.value.clone() * self.internal_weight.clone() + value * weight.clone())
-            / (self.internal_weight.clone() + weight.clone())
+        let current_weighted = self.value.clone() * self.internal_weight.clone();
+        let input_weighted = value * weight.clone();
+        let total_weight = self.internal_weight.clone() + weight.clone();
+        self.value = (current_weighted + input_weighted) / total_weight;
     }
 }
 

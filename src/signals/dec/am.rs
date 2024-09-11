@@ -462,7 +462,7 @@ impl TransitionDecoder {
             transition,
             window,
             min_snr,
-            noise_level: WindowedWeightedAverage::new(0.0, (hold.value() * window.value()) as f32),
+            noise_level: WindowedWeightedAverage::new(0.5, (hold.value() * window.value()) as f32),
             result: Vec::new(),
         })
     }
@@ -509,8 +509,8 @@ impl TransitionDecoder {
             DecoderState::FailedPreamble => Err(Error::IncorrectPreamble),
             _ => {
                 let expected_transition = self.result.last().unwrap().neg();
-                let next = NextTransitionSearch::search(
-                    s,
+                let next: Option<NextTransitionSearch> = NextTransitionSearch::search(
+                    Samples(&s.0),
                     self.window,
                     self.transition,
                     expected_transition,
@@ -524,18 +524,27 @@ impl TransitionDecoder {
                             self.result.push(Transition::Hold(result.hold_length))
                         }
                         self.result.push(expected_transition);
+                        let consumed = (result.hold_length + 1) * self.window.value();
+                        let synchronization_offset = TransitionWindowSynchronizer::synchronize(
+                            SignalWindow::new(s, self.window)
+                                .unwrap()
+                                .offset(consumed as isize)
+                                .unwrap(),
+                            self.transition,
+                        )
+                        .offset;
                         Ok(DecoderOutput::Consumed(
-                            (result.hold_length + 1) * self.window.value(),
+                            ((consumed as isize) + synchronization_offset) as usize,
                         ))
                     },
-                    None => todo!(),
+                    None => Ok(DecoderOutput::Consumed(0)),
                 }
             },
         }
     }
 
     fn calc_min_signal_level(&self) -> Amplitude {
-        todo!()
+        Amplitude::new(*self.noise_level.value() * self.min_snr.value())
     }
 
     fn get_state(&self) -> DecoderState {
@@ -871,6 +880,19 @@ mod integration_test {
         fn lead_in_sample_count(&self) -> SampleCount {
             self.sampling_rate * self.lead_in
         }
+
+        fn transition_windows_sample_count(&self) -> SampleCount {
+            let baud_time = self.baudrate.cycle_time();
+            self.sampling_rate * baud_time
+        }
+
+        fn window_sample_count(&self) -> SampleCount {
+            let window_sample_count = self.transition_windows_sample_count();
+            SampleCount::new(
+                self.transition_width
+                    .scale_usize(window_sample_count.value()),
+            )
+        }
     }
 
     fn create_signal_with_message(message: &str, p: &Params) -> (Vec<f32>, Vec<Transition>) {
@@ -910,5 +932,42 @@ mod integration_test {
         };
 
         (result, transitions)
+    }
+
+    //#[test]
+    fn integration_test_parsing_ideal_message_signal_1() {
+        let params = Params {
+            lead_in: Time::new(0.5),
+            lead_out: Time::new(0.5),
+            carrier_frequency: Frequency::new(20000.),
+            sampling_rate: SamplingRate::new(44000),
+            carrier_amplitude: Amplitude::new(1.),
+            baudrate: Frequency::new(100.),
+            transition_width: Proportion::new(0.5),
+            high_low: (Amplitude::new(1.), Amplitude::new(0.)),
+            stuff_bit: 4,
+        };
+
+        let message_samples = create_signal_with_message("ABCD", &params);
+
+        let mut decoder = TransitionDecoder::new(
+            SampleCount::new(0),
+            SampleCount::new(params.stuff_bit.into()),
+            params.transition_windows_sample_count(),
+            params.window_sample_count(),
+            Proportion::new(0.5),
+        )
+        .unwrap();
+
+        let result: DecoderOutput = decoder
+            .process(Samples(&message_samples.0.as_slice()))
+            .unwrap();
+
+        match result {
+            DecoderOutput::Finshed(transitions, _used_samples) => {
+                assert_eq!(transitions, message_samples.1)
+            },
+            _ => panic!("Unexpected output"),
+        }
     }
 }
