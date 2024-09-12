@@ -353,7 +353,7 @@ impl StartOfFrameSearch {
                     signal_level: Amplitude::new(signal),
                     noise_level: match noise_level_calculation {
                         Some(nlc) => nlc.noise_level,
-                        None => Amplitude::zero(),
+                        None => Amplitude::new(&samples[..idx].iter().sum::<f32>() / (idx as f32)),
                     },
                 })
             },
